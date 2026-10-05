@@ -60,6 +60,7 @@ jobs:
           openssl version
           losetup --version
           command -v kpartx
+          command -v qemu-aarch64-static
 
           echo "=== DEPENDENCY CHECK: PASS ==="
 
@@ -69,7 +70,7 @@ jobs:
       - name: Install Latest pmbootstrap
         run: |
           git clone --depth=1 \
-            https://gitlab.postmarketOS.org/postMarketOS/pmbootstrap.git \
+            https://gitlab.postmarketos.org/postMarketOS/pmbootstrap.git \
             "$HOME/pmbootstrap"
 
           mkdir -p "$HOME/.local/bin"
@@ -89,11 +90,12 @@ jobs:
       - name: Clone Official pmaports
         run: |
           git clone --depth=1 \
-            https://gitlab.postmarketOS.org/postMarketOS/pmaports.git \
+            https://gitlab.postmarketos.org/postMarketOS/pmaports.git \
             "$HOME/pmaports"
 
           echo "=== PMAPORTS ==="
           git -C "$HOME/pmaports" branch --show-current
+          git -C "$HOME/pmaports" rev-parse --short HEAD
 
           echo
           echo "=== WHYRED DEVICE CHECK ==="
@@ -157,6 +159,9 @@ jobs:
           pmbootstrap config timezone Asia/Jakarta
           pmbootstrap config jobs 4
 
+          # Explicitly select OpenRC for the headless server.
+          pmbootstrap config service_manager openrc
+
           pmbootstrap config extra_packages \
             "openssh,networkmanager,wpa_supplicant,iw,util-linux,usbutils,curl"
 
@@ -176,7 +181,6 @@ jobs:
         run: |
           pmbootstrap install \
             --password=1234 \
-            --no-fstab \
             --no-image
 
           echo
@@ -239,8 +243,7 @@ jobs:
       - name: Build Final Image
         run: |
           pmbootstrap install \
-            --password=1234 \
-            --no-fstab
+            --password=1234
 
           echo
           echo "=== FINAL IMAGE BUILD: PASS ==="
@@ -283,14 +286,20 @@ jobs:
 
           if [ -f "$ROOTFS/etc/hostname" ]; then
             cat "$ROOTFS/etc/hostname"
+          else
+            echo "WARNING: /etc/hostname not found."
           fi
 
           echo
-          echo "=== IMAGE FILES ==="
+          echo "=== VERIFY IMAGE OUTPUT ==="
 
           find "$HOME/pmbootstrap-work" \
             -type f \
-            \( -name "*.img" -o -name "*.zip" -o -name "*.tar.gz" \) \
+            \( \
+              -name "*.img" \
+              -o -name "*.zip" \
+              -o -name "*.tar.gz" \
+            \) \
             -print
 
           echo
