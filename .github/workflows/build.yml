@@ -2,7 +2,6 @@ name: Build postmarketOS Whyred Headless Server
 
 on:
   workflow_dispatch:
-    inputs: {}
 
 jobs:
   build:
