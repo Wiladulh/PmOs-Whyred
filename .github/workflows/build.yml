@@ -17,12 +17,9 @@ jobs:
 
       - name: Free Up Disk Space & Clean Old Caches
         run: |
-          # SANITASI 1: Menghapus total sisa konfigurasi lama pmbootstrap yang mengendap di runner
           sudo rm -f ~/.config/pmbootstrap.cfg
           sudo rm -f ~/.config/pmbootstrap_v3.cfg
           sudo rm -rf ~/.local/var/pmbootstrap
-          
-          # Pembersihan ruang disk standar
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android
           df -h
 
@@ -31,21 +28,19 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y git python3 openssl util-linux coreutils binfmt-support qemu-user-static openssh-client
           
-          # Mengambil pmbootstrap murni langsung dari repositori GitLab mandiri resmi yang aktif
-          git clone --depth=1 https://gitlab.postmarketos.org/postmarketOS/pmbootstrap.git ~/pmbootstrap
+          # Kloning pmbootstrap menggunakan repositori GitLab resmi yang valid
+          git clone --depth=1 https://postmarketos.org ~/pmbootstrap
           sudo ln -s ~/pmbootstrap/pmbootstrap.py /usr/local/bin/pmbootstrap
           pmbootstrap --version
 
       - name: Pre-clone Official Pmaports Locally
         run: |
-          # Mengamankan berkas resep pmaports secara mandiri untuk menghindari proses kloning otomatis url lama
+          # PERBAIKAN KRITIS: Menggunakan URL Git asli yang lengkap dengan akhiran .git agar tidak diblokir server
           git clone --depth=1 https://postmarketos.org ~/pmaports
 
-      - name: Inject Clean Configuration File
+      - name: Inject Valid Configuration File
         run: |
           mkdir -p ~/.config
-          
-          # SANITASI 2: Menulis file konfigurasi bersih baru langsung ke kedua kemungkinan nama file konfigurasi (v2 & v3)
           cat << 'EOF' > ~/.config/pmbootstrap.cfg
           [pmbootstrap]
           work = /home/runner/pmbootstrap-work
@@ -58,7 +53,7 @@ jobs:
           user = giebux
           timezone = Asia/Jakarta
           extra_packages = openssh,networkmanager,wpa_supplicant,iw,util-linux
-          mirrors_alpine = http://dl-cdn.alpinelinux.org/alpine/
+          mirrors_alpine = http://alpinelinux.org
           aports = /home/runner/pmaports
           EOF
           
@@ -66,7 +61,6 @@ jobs:
 
       - name: Block Broken Remotes Non-Interactively
         run: |
-          # SANITASI 3: Memaksa pmbootstrap mematikan cermin pmaports eksternal yang sudah mati demi mencegah error 128
           pmbootstrap config mirrors.pmaports none || true
           pmbootstrap config mirrors.systemd none || true
 
@@ -75,7 +69,6 @@ jobs:
           CHROOT_NM_DIR="/home/runner/pmbootstrap-work/chroot_rootfs_xiaomi-whyred/etc/NetworkManager/system-connections"
           sudo mkdir -p "$CHROOT_NM_DIR"
           
-          # Membakar kredensial SSID Wi-Fi rumah Anda ke dalam sistem berkas citra
           sudo tee "$CHROOT_NM_DIR/fh_25f618.nmconnection" > /dev/null << 'EOF'
           [connection]
           id=fh_25f618
@@ -103,7 +96,6 @@ jobs:
 
       - name: Compile and Install Image Target
         env:
-          # Memaksa pembuatan berjalan dalam mode lokal penuh memanfaatkan pmaports yang sudah di-clone
           PMBOOTSTRAP_OFFLINE: "1"
           PMB_APK_FORCE_MISSING_REPOSITORIES: "1"
         run: |
