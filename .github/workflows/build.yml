@@ -248,7 +248,7 @@ jobs:
           echo
           echo "=== FINAL IMAGE BUILD: PASS ==="
 
-      # ============================================================
+# ============================================================
       # 12. VERIFY
       # ============================================================
       - name: Verify Build
@@ -262,7 +262,7 @@ jobs:
           echo
           echo "=== VERIFY SSH ==="
 
-          if [ -f "$ROOTFS/etc/init.d/sshd" ]; then
+          if test -f "$ROOTFS/etc/init.d/sshd"; then
             echo "sshd service: PASS"
           else
             echo "ERROR: sshd service not found."
@@ -272,9 +272,7 @@ jobs:
           echo
           echo "=== VERIFY WIFI ==="
 
-          if [ -f \
-            "$ROOTFS/etc/NetworkManager/system-connections/fh_25f618.nmconnection"
-          ]; then
+          if test -f "$ROOTFS/etc/NetworkManager/system-connections/fh_25f618.nmconnection"; then
             echo "Wi-Fi profile: PASS"
           else
             echo "ERROR: Wi-Fi profile not found."
@@ -284,7 +282,8 @@ jobs:
           echo
           echo "=== VERIFY HOSTNAME ==="
 
-          if [ -f "$ROOTFS/etc/hostname" ]; then
+          if test -f "$ROOTFS/etc/hostname"; then
+            echo "Hostname:"
             cat "$ROOTFS/etc/hostname"
           else
             echo "WARNING: /etc/hostname not found."
