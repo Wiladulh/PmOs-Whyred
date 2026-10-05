@@ -194,10 +194,10 @@ jobs:
             exit 1
           fi
 
-      - name: Configure USB Networking
+      -       - name: Configure USB Networking
         run: |
           ROOTFS="$HOME/pmbootstrap-work/chroot_rootfs_xiaomi-whyred"
-          DEVICEINFO="$ROOTFS/etc/deviceinfo"
+          DEVICEINFO="$ROOTFS/usr/share/deviceinfo/deviceinfo"
 
           echo "=== USB NETWORKING ==="
 
@@ -213,6 +213,10 @@ jobs:
           else
             echo "ERROR: deviceinfo not found:"
             echo "$DEVICEINFO"
+            find "$ROOTFS/usr/share/deviceinfo" \
+              -maxdepth 2 \
+              -type f \
+              -print 2>/dev/null || true
             exit 1
           fi
 
@@ -246,7 +250,7 @@ jobs:
           echo "USB IPv4 client: 172.16.42.2"
           echo "IPv6: link-local autoconfiguration preserved"
           echo "=== USB NETWORK CONFIGURATION: PASS ==="
-
+          
       - name: Build Final Image
         run: |
           pmbootstrap install \
