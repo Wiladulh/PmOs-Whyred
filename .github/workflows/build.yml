@@ -3,6 +3,9 @@ name: Build postmarketOS Whyred Headless Server
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -307,3 +310,12 @@ jobs:
           name: pmos-whyred-headless-server
           path: output/
           if-no-files-found: error
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: v0.1.${{ github.run_number }}
+          name: postmarketOS Whyred Headless Server v0.1.${{ github.run_number }}
+          generate_release_notes: true
+          files: |
+            output/*
