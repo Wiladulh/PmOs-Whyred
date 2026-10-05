@@ -22,14 +22,12 @@ jobs:
           sudo rm -rf /opt/ghc
           sudo rm -rf /usr/local/lib/android
           sudo apt-get clean
-
           echo "=== DISK ==="
           df -h
 
       - name: Install Build Dependencies
         run: |
           sudo apt-get update
-
           sudo apt-get install -y \
             git \
             python3 \
@@ -47,7 +45,6 @@ jobs:
           openssl version
           losetup --version
           command -v kpartx
-
           echo "=== DEPENDENCY CHECK: PASS ==="
 
       - name: Install Latest pmbootstrap
@@ -83,13 +80,11 @@ jobs:
             echo "PASS: device-xiaomi-whyred exists."
           else
             echo "ERROR: device-xiaomi-whyred not found."
-
             find "$HOME/pmaports/device" \
               -maxdepth 3 \
               -type d \
               -name '*whyred*' \
               -print
-
             exit 1
           fi
 
@@ -124,7 +119,6 @@ jobs:
 
           pmbootstrap config work "$PMB_WORK"
           pmbootstrap config aports "$PMB_APORTS"
-
           pmbootstrap config device xiaomi-whyred
           pmbootstrap config ui console
           pmbootstrap config user giebux
@@ -200,6 +194,59 @@ jobs:
             exit 1
           fi
 
+      - name: Configure USB Networking
+        run: |
+          ROOTFS="$HOME/pmbootstrap-work/chroot_rootfs_xiaomi-whyred"
+          DEVICEINFO="$ROOTFS/etc/deviceinfo"
+
+          echo "=== USB NETWORKING ==="
+
+          if test -d "$ROOTFS"; then
+            echo "Rootfs: PASS"
+          else
+            echo "ERROR: rootfs not found."
+            exit 1
+          fi
+
+          if test -f "$DEVICEINFO"; then
+            echo "deviceinfo: PASS"
+          else
+            echo "ERROR: deviceinfo not found:"
+            echo "$DEVICEINFO"
+            exit 1
+          fi
+
+          sudo sed -i \
+            '/^deviceinfo_usb_network_function=/d' \
+            "$DEVICEINFO"
+
+          sudo sed -i \
+            '/^deviceinfo_usb_server_ip=/d' \
+            "$DEVICEINFO"
+
+          sudo sed -i \
+            '/^deviceinfo_usb_client_ip=/d' \
+            "$DEVICEINFO"
+
+          sudo tee -a "$DEVICEINFO" > /dev/null <<'EOF'
+
+          # USB Ethernet Gadget
+          deviceinfo_usb_network_function="ncm.usb0"
+          deviceinfo_usb_server_ip="172.16.42.1"
+          deviceinfo_usb_client_ip="172.16.42.2"
+          EOF
+
+          echo
+          echo "=== USB NETWORK CONFIG ==="
+          sudo tail -n 8 "$DEVICEINFO"
+
+          echo
+          echo "USB NCM: PASS"
+          echo "USB IPv4 server: 172.16.42.1"
+          echo "USB IPv4 client: 172.16.42.2"
+          echo "IPv6: link-local autoconfiguration preserved"
+          echo "=== USB NETWORK CONFIGURATION: PASS ==="
+
       - name: Build Final Image
         run: |
           pmbootstrap install \
@@ -210,6 +257,7 @@ jobs:
           ROOTFS="$HOME/pmbootstrap-work/chroot_rootfs_xiaomi-whyred"
           BOOTIMG="$ROOTFS/boot/boot.img"
           WIFI_FILE="$ROOTFS/etc/NetworkManager/system-connections/fh_25f618.nmconnection"
+          DEVICEINFO="$ROOTFS/etc/deviceinfo"
 
           echo "=== VERIFY ROOTFS ==="
 
@@ -243,6 +291,35 @@ jobs:
           fi
 
           echo
+          echo "=== VERIFY USB NETWORK ==="
+
+          if test -f "$DEVICEINFO"; then
+            if grep -q '^deviceinfo_usb_network_function="ncm.usb0"' "$DEVICEINFO"; then
+              echo "USB NCM configuration: PASS"
+            else
+              echo "ERROR: USB NCM configuration not found."
+              exit 1
+            fi
+
+            if grep -q '^deviceinfo_usb_server_ip="172.16.42.1"' "$DEVICEINFO"; then
+              echo "USB server IPv4: PASS"
+            else
+              echo "ERROR: USB server IPv4 not found."
+              exit 1
+            fi
+
+            if grep -q '^deviceinfo_usb_client_ip="172.16.42.2"' "$DEVICEINFO"; then
+              echo "USB client IPv4: PASS"
+            else
+              echo "ERROR: USB client IPv4 not found."
+              exit 1
+            fi
+          else
+            echo "ERROR: deviceinfo not found."
+            exit 1
+          fi
+
+          echo
           echo "=== VERIFY BOOT IMAGE ==="
 
           if test -f "$BOOTIMG"; then
@@ -264,7 +341,7 @@ jobs:
 
           echo
           echo "=== BUILD VERIFICATION: PASS ==="
-          
+
       - name: Export postmarketOS Images
         run: |
           rm -rf output
