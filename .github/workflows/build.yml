@@ -1,4 +1,3 @@
-
 name: Build postmarketOS Whyred Headless Server
 
 on:
@@ -21,39 +20,73 @@ jobs:
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android
           df -h
 
-      - name: Install System Dependencies & pmbootstrap
+      - name: Install System Dependencies & pmbootstrap via Git
         run: |
           sudo apt-get update
           sudo apt-get install -y git python3-pip util-linux coreutils binfmt-support qemu-user-static
-          pip install --upgrade pip
-          pip install pmbootstrap
+          # Memperbaiki URL kloning ke infrastruktur GitLab postmarketOS yang baru dan aktif
+          git clone https://postmarketos.org ~/pmbootstrap
+          sudo ln -s ~/pmbootstrap/pmbootstrap.py /usr/local/bin/pmbootstrap
 
       - name: Initialize pmbootstrap (Non-Interactive Headless)
         run: |
-          yes "" | pmbootstrap init \
-            --work-path ~/.local/var/pmbootstrap \
-            --mirror http://dl-cdn.alpinelinux.org/alpine/ \
-            --branch edge \
-            --device xiaomi-whyred \
-            --interface none
+          # Mengganti piping interaktif dengan deklarasi flag argumen yang valid dan presisi
+          pmbootstrap init \
+            --work-path=/home/runner/pmbootstrap-work \
+            --channel=edge \
+            --vendor=xiaomi \
+            --device=whyred \
+            --ui=none \
+            --username=giebux \
+            --timezone=Asia/Jakarta
 
       - name: Configure Extra Packages
         run: |
-          pmbootstrap config extra_packages "openssh,openrc,networking,wpa_supplicant,iw,util-linux"
+          # NetworkManager wajib digunakan untuk menangani wlan0 headless
+          pmbootstrap config extra_packages "openssh,networkmanager,wpa_supplicant,iw,util-linux"
 
-      - name: Build Rootfs and Device Package
+      - name: Inject Wi-Fi Configuration
         run: |
-          pmbootstrap build --force
+          CHROOT_NM_DIR="/home/runner/pmbootstrap-work/chroot_rootfs_xiaomi-whyred/etc/NetworkManager/system-connections"
+          sudo mkdir -p "$CHROOT_NM_DIR"
+          
+          # Menyuntikkan konfigurasi ssid fh_25f618 langsung ke dalam image target sebelum instalasi selesai
+          sudo tee "$CHROOT_NM_DIR/fh_25f618.nmconnection" > /dev/null << 'EOF'
+          [connection]
+          id=fh_25f618
+          uuid=a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d
+          type=wifi
+          interface-name=wlan0
+
+          [wifi]
+          mode=infrastructure
+          ssid=fh_25f618
+
+          [wifi-security]
+          auth-alg=open
+          key-mgmt=wpa-psk
+          psk=11223344
+
+          [ipv4]
+          method=auto
+
+          [ipv6]
+          method=auto
+          EOF
+
+          sudo chmod 600 "$CHROOT_NM_DIR/fh_25f618.nmconnection"
 
       - name: Install Image Target
         run: |
-          pmbootstrap install --no-fde
+          # Perintah ini secara otomatis membangun paket perangkat, kernel, dan rootfs sekaligus
+          pmbootstrap install --password=1234 --no-fstab
 
       - name: Export Output Files
         run: |
           mkdir -p output
-          pmbootstrap export
-          cp -r ~/.local/var/pmbootstrap/export/* output/ || true
+          # Mengekspor berkas img resmi ke folder keluaran kerja runner
+          pmbootstrap export /home/runner/work-export
+          cp -r /home/runner/work-export/* output/ || true
           ls -la output/
 
       - name: Upload Artifacts
