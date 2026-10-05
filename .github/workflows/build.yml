@@ -49,13 +49,15 @@ jobs:
             kpartx \
             binfmt-support \
             qemu-user-static \
-            openssh-client
+            openssh-client \
+            expect
 
           echo "=== DEPENDENCIES ==="
           git --version
           python3 --version
           losetup --version
           command -v kpartx
+          expect -v
           echo "=== DEPENDENCY CHECK: PASS ==="
 
       # ============================================================
@@ -90,27 +92,157 @@ jobs:
           echo "=== PMAPORTS ==="
           git -C "$HOME/pmaports" branch --show-current
 
+          echo
           echo "=== WHYRED DEVICE CHECK ==="
 
           if [ ! -d "$HOME/pmaports/device/testing/device-xiaomi-whyred" ]; then
             echo "ERROR: device-xiaomi-whyred not found."
+
             find "$HOME/pmaports/device" \
               -maxdepth 3 \
               -type d \
               -name '*whyred*' \
               -print
+
             exit 1
           fi
 
           echo "PASS: device-xiaomi-whyred exists."
 
       # ============================================================
-      # 07. PMBOOTSTRAP CONFIGURATION
+      # 07. NON-INTERACTIVE PMBOOTSTRAP INIT
+      # ============================================================
+      - name: Initialize pmbootstrap
+        env:
+          PMB_WORK: ${{ github.workspace }}/pmbootstrap-work
+          PMB_APORTS: ${{ github.workspace }}/pmaports
+        run: |
+          mkdir -p "$PMB_WORK"
+
+          cat > /tmp/pmbootstrap-init.exp <<'EOF'
+          #!/usr/bin/expect -f
+
+          set timeout 1200
+
+          set work $env(PMB_WORK)
+          set aports $env(PMB_APORTS)
+
+          spawn pmbootstrap \
+            --work "$work" \
+            --aports "$aports" \
+            init
+
+          expect {
+            -re {Work path.*:} {
+              send "$work\r"
+              exp_continue
+            }
+
+            -re {pmaports path.*:} {
+              send "$aports\r"
+              exp_continue
+            }
+
+            -re {Channel.*:} {
+              send "edge\r"
+              exp_continue
+            }
+
+            -re {Vendor.*:} {
+              send "xiaomi\r"
+              exp_continue
+            }
+
+            -re {Device codename.*:} {
+              send "whyred\r"
+              exp_continue
+            }
+
+            -re {Username.*:} {
+              send "giebux\r"
+              exp_continue
+            }
+
+            -re {User interface.*:} {
+              send "console\r"
+              exp_continue
+            }
+
+            -re {Extra packages.*:} {
+              send "openssh,networkmanager,networkmanager-wifi,networkmanager-cli,wpa_supplicant,iw,util-linux,usbutils,curl\r"
+              exp_continue
+            }
+
+            -re {Device hostname.*:} {
+              send "whyred-server\r"
+              exp_continue
+            }
+
+            -re {Would you like to copy.*SSH.*keys.*} {
+              send "n\r"
+              exp_continue
+            }
+
+            -re {Build outdated packages.*} {
+              send "y\r"
+              exp_continue
+            }
+
+            -re {Use this timezone instead of GMT.*} {
+              send "y\r"
+              exp_continue
+            }
+
+            -re {Locale.*:} {
+              send "en_US\r"
+              exp_continue
+            }
+
+            -re {Change them.*} {
+              send "n\r"
+              exp_continue
+            }
+
+            -re {Install systemd.*} {
+              send "never\r"
+              exp_continue
+            }
+
+            -re {Provider.*:} {
+              send "default\r"
+              exp_continue
+            }
+
+            eof {
+              catch wait result
+              set exit_code [lindex $result 3]
+
+              if {$exit_code != 0} {
+                exit $exit_code
+              }
+
+              exit 0
+            }
+
+            timeout {
+              puts "ERROR: pmbootstrap init timed out."
+              exit 1
+            }
+          }
+          EOF
+
+          chmod +x /tmp/pmbootstrap-init.exp
+
+          /tmp/pmbootstrap-init.exp
+
+          echo
+          echo "=== PMBOOTSTRAP INIT: PASS ==="
+
+      # ============================================================
+      # 08. APPLY FINAL CONFIGURATION
       # ============================================================
       - name: Configure pmbootstrap
         run: |
-          pmbootstrap -y init
-
           pmbootstrap config aports "$HOME/pmaports"
           pmbootstrap config device xiaomi-whyred
           pmbootstrap config ui console
@@ -120,17 +252,20 @@ jobs:
           pmbootstrap config jobs 4
 
           pmbootstrap config extra_packages \
-            "openssh,networkmanager,wpa_supplicant,iw,util-linux,usbutils,curl"
+            "openssh,networkmanager,networkmanager-wifi,networkmanager-cli,wpa_supplicant,iw,util-linux,usbutils,curl"
 
           pmbootstrap config ssh_keys False
           pmbootstrap config nonfree_firmware True
 
           echo
-          echo "=== PMBOOTSTRAP CONFIG ==="
+          echo "=== FINAL PMBOOTSTRAP CONFIG ==="
           pmbootstrap config
 
+          echo
+          echo "=== CONFIGURATION: PASS ==="
+
       # ============================================================
-      # 08. CREATE ROOTFS ONLY
+      # 09. CREATE ROOTFS ONLY
       # ============================================================
       - name: Build Rootfs
         run: |
@@ -139,47 +274,24 @@ jobs:
             --no-fstab \
             --no-image
 
-      # ============================================================
-      # 09. CONFIGURE HEADLESS SERVER
-      # ============================================================
-      - name: Configure Headless Server
-        run: |
-          ROOTFS="$HOME/.local/var/pmbootstrap/chroot_rootfs_xiaomi-whyred"
+          echo
+          echo "=== ROOTFS BUILD: PASS ==="
 
-          echo "=== ROOTFS ==="
-          echo "$ROOTFS"
+      # ============================================================
+      # 10. CONFIGURE WIFI + NETWORK SERVICES
+      # ============================================================
+      - name: Configure Headless Network
+        run: |
+          ROOTFS="$HOME/pmbootstrap-work/chroot_rootfs_xiaomi-whyred"
 
           if [ ! -d "$ROOTFS" ]; then
-            echo "ERROR: rootfs not found."
+            echo "ERROR: Rootfs not found:"
+            echo "$ROOTFS"
             exit 1
           fi
 
           # --------------------------------------------------------
-          # SSH
-          # --------------------------------------------------------
-          sudo mkdir -p "$ROOTFS/etc/ssh"
-
-          if [ -f "$ROOTFS/etc/ssh/sshd_config" ]; then
-            sudo sed -i \
-              's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' \
-              "$ROOTFS/etc/ssh/sshd_config"
-          fi
-
-          sudo mkdir -p "$ROOTFS/etc/runlevels/default"
-
-          sudo ln -sf \
-            /etc/init.d/sshd \
-            "$ROOTFS/etc/runlevels/default/sshd"
-
-          # --------------------------------------------------------
-          # NetworkManager
-          # --------------------------------------------------------
-          sudo ln -sf \
-            /etc/init.d/NetworkManager \
-            "$ROOTFS/etc/runlevels/default/NetworkManager"
-
-          # --------------------------------------------------------
-          # Wi-Fi profile
+          # NetworkManager Wi-Fi profile
           # --------------------------------------------------------
           WIFI_DIR="$ROOTFS/etc/NetworkManager/system-connections"
 
@@ -211,31 +323,66 @@ jobs:
             "$WIFI_DIR/fh_25f618.nmconnection"
 
           # --------------------------------------------------------
-          # Ensure hostname
+          # Enable NetworkManager
+          # --------------------------------------------------------
+          if [ -f "$ROOTFS/etc/init.d/networkmanager" ]; then
+            sudo mkdir -p "$ROOTFS/etc/runlevels/default"
+
+            sudo ln -sf \
+              /etc/init.d/networkmanager \
+              "$ROOTFS/etc/runlevels/default/networkmanager"
+          fi
+
+          # --------------------------------------------------------
+          # Enable wpa_supplicant
+          # --------------------------------------------------------
+          if [ -f "$ROOTFS/etc/init.d/wpa_supplicant" ]; then
+            sudo mkdir -p "$ROOTFS/etc/runlevels/default"
+
+            sudo ln -sf \
+              /etc/init.d/wpa_supplicant \
+              "$ROOTFS/etc/runlevels/default/wpa_supplicant"
+          fi
+
+          # --------------------------------------------------------
+          # Hostname
           # --------------------------------------------------------
           echo "whyred-server" | \
             sudo tee "$ROOTFS/etc/hostname" > /dev/null
-
-          echo
-          echo "=== SSH CONFIG ==="
-          sudo grep -E \
-            '^(PasswordAuthentication|PermitRootLogin)' \
-            "$ROOTFS/etc/ssh/sshd_config" || true
 
           echo
           echo "=== WIFI PROFILE ==="
           sudo cat "$WIFI_DIR/fh_25f618.nmconnection"
 
           echo
-          echo "=== ENABLED SERVICES ==="
+          echo "=== NETWORK SERVICES ==="
           ls -l "$ROOTFS/etc/runlevels/default/" | \
-            grep -E 'sshd|NetworkManager' || true
+            grep -E 'networkmanager|wpa_supplicant' || true
 
           echo
-          echo "HEADLESS CONFIGURATION: PASS"
+          echo "=== NETWORK CONFIGURATION: PASS ==="
 
       # ============================================================
-      # 10. BUILD FINAL IMAGE
+      # 11. VERIFY SSH
+      # ============================================================
+      - name: Verify SSH
+        run: |
+          ROOTFS="$HOME/pmbootstrap-work/chroot_rootfs_xiaomi-whyred"
+
+          if [ ! -f "$ROOTFS/etc/init.d/sshd" ]; then
+            echo "ERROR: sshd service not found."
+            exit 1
+          fi
+
+          if [ ! -L "$ROOTFS/etc/runlevels/default/sshd" ]; then
+            echo "ERROR: sshd is not enabled."
+            exit 1
+          fi
+
+          echo "SSHD: PASS"
+
+      # ============================================================
+      # 12. BUILD FINAL IMAGE
       # ============================================================
       - name: Build Final Image
         run: |
@@ -243,58 +390,55 @@ jobs:
             --password=1234 \
             --no-fstab
 
+          echo
+          echo "=== FINAL IMAGE BUILD: PASS ==="
+
       # ============================================================
-      # 11. VERIFY FINAL ROOTFS
+      # 13. VERIFY FINAL CONFIGURATION
       # ============================================================
-      - name: Verify Final Image Configuration
+      - name: Verify Final Configuration
         run: |
-          ROOTFS="$HOME/.local/var/pmbootstrap/chroot_rootfs_xiaomi-whyred"
+          ROOTFS="$HOME/pmbootstrap-work/chroot_rootfs_xiaomi-whyred"
 
-          echo "=== VERIFY SSH ==="
-
-          if [ ! -e "$ROOTFS/etc/init.d/sshd" ]; then
-            echo "ERROR: sshd service missing."
-            exit 1
-          fi
-
-          if [ ! -L "$ROOTFS/etc/runlevels/default/sshd" ]; then
-            echo "ERROR: sshd service not enabled."
-            exit 1
-          fi
-
-          echo "SSH: PASS"
-
-          echo
-          echo "=== VERIFY NETWORKMANAGER ==="
-
-          if [ ! -e "$ROOTFS/etc/init.d/NetworkManager" ]; then
-            echo "ERROR: NetworkManager service missing."
-            exit 1
-          fi
-
-          echo "NetworkManager: PASS"
-
-          echo
-          echo "=== VERIFY WIFI ==="
-
-          if [ ! -f \
-            "$ROOTFS/etc/NetworkManager/system-connections/fh_25f618.nmconnection" \
-          ]; then
-            echo "ERROR: Wi-Fi profile missing."
-            exit 1
-          fi
-
-          echo "Wi-Fi profile: PASS"
-
-          echo
           echo "=== VERIFY HOSTNAME ==="
           cat "$ROOTFS/etc/hostname"
 
           echo
-          echo "=== FINAL CONFIGURATION: PASS ==="
+          echo "=== VERIFY WIFI ==="
+
+          test -f \
+            "$ROOTFS/etc/NetworkManager/system-connections/fh_25f618.nmconnection"
+
+          echo "Wi-Fi profile: PASS"
+
+          echo
+          echo "=== VERIFY SSH ==="
+
+          test -f "$ROOTFS/etc/init.d/sshd"
+
+          echo "SSH service: PASS"
+
+          echo
+          echo "=== VERIFY NETWORKMANAGER ==="
+
+          test -f "$ROOTFS/etc/init.d/networkmanager"
+
+          echo "NetworkManager: PASS"
+
+          echo
+          echo "=== VERIFY WHYRED IMAGE ==="
+
+          find "$HOME/pmbootstrap-work" \
+            -maxdepth 3 \
+            -type f \
+            \( -name "*.img" -o -name "*.zip" \) \
+            -print
+
+          echo
+          echo "=== FINAL VERIFICATION: PASS ==="
 
       # ============================================================
-      # 12. EXPORT
+      # 14. EXPORT
       # ============================================================
       - name: Export postmarketOS Images
         run: |
@@ -310,7 +454,7 @@ jobs:
           ls -lah output/
 
       # ============================================================
-      # 13. UPLOAD ARTIFACT
+      # 15. UPLOAD ARTIFACT
       # ============================================================
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
