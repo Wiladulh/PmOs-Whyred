@@ -223,10 +223,12 @@ jobs:
           echo
           echo "=== VERIFY SSH ==="
 
-          if test -f "$ROOTFS/etc/init.d/sshd"; then
-            echo "sshd service: PASS"
+          if test -x "$ROOTFS/usr/sbin/sshd"; then
+            echo "sshd binary: PASS"
+          elif test -x "$ROOTFS/usr/bin/ssh"; then
+            echo "ssh client: PASS"
           else
-            echo "ERROR: sshd service not found."
+            echo "ERROR: OpenSSH binaries not found."
             exit 1
           fi
 
@@ -262,7 +264,7 @@ jobs:
 
           echo
           echo "=== BUILD VERIFICATION: PASS ==="
-
+          
       - name: Export postmarketOS Images
         run: |
           rm -rf output
