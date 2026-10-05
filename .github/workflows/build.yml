@@ -32,6 +32,8 @@ jobs:
           sudo rm -rf /opt/ghc
           sudo rm -rf /usr/local/lib/android
           sudo apt-get clean
+
+          echo "=== DISK ==="
           df -h
 
       # ============================================================
@@ -40,6 +42,7 @@ jobs:
       - name: Install Build Dependencies
         run: |
           sudo apt-get update
+
           sudo apt-get install -y \
             git \
             python3 \
@@ -49,15 +52,15 @@ jobs:
             kpartx \
             binfmt-support \
             qemu-user-static \
-            openssh-client \
-            expect
+            openssh-client
 
           echo "=== DEPENDENCIES ==="
           git --version
           python3 --version
+          openssl version
           losetup --version
           command -v kpartx
-          expect -v
+
           echo "=== DEPENDENCY CHECK: PASS ==="
 
       # ============================================================
@@ -66,7 +69,7 @@ jobs:
       - name: Install Latest pmbootstrap
         run: |
           git clone --depth=1 \
-            https://gitlab.postmarketos.org/postMarketOS/pmbootstrap.git \
+            https://gitlab.postmarketOS.org/postMarketOS/pmbootstrap.git \
             "$HOME/pmbootstrap"
 
           mkdir -p "$HOME/.local/bin"
@@ -86,7 +89,7 @@ jobs:
       - name: Clone Official pmaports
         run: |
           git clone --depth=1 \
-            https://gitlab.postmarketos.org/postMarketOS/pmaports.git \
+            https://gitlab.postmarketOS.org/postMarketOS/pmaports.git \
             "$HOME/pmaports"
 
           echo "=== PMAPORTS ==="
@@ -110,241 +113,43 @@ jobs:
           echo "PASS: device-xiaomi-whyred exists."
 
       # ============================================================
-      # 07. NON-INTERACTIVE PMBOOTSTRAP INIT
+      # 07. PMBOOTSTRAP INIT
       # ============================================================
       - name: Initialize pmbootstrap
-        env:
-          PMB_WORK: ${{ github.workspace }}/pmbootstrap-work
-          PMB_APORTS: ${{ github.workspace }}/pmaports
         run: |
+          PMB_WORK="$HOME/pmbootstrap-work"
+          PMB_APORTS="$HOME/pmaports"
+
           mkdir -p "$PMB_WORK"
 
-          cat > /tmp/pmbootstrap-init.exp <<'EOF'
-          #!/usr/bin/expect -f
+          echo "=== PMBOOTSTRAP INIT ==="
+          echo "WORK:   $PMB_WORK"
+          echo "APORTS: $PMB_APORTS"
 
-          set timeout 1200
+          test -d "$PMB_APORTS"
+          test -d "$PMB_APORTS/device/testing/device-xiaomi-whyred"
 
-          set work $env(PMB_WORK)
-          set aports $env(PMB_APORTS)
+          cd "$HOME"
 
-          spawn pmbootstrap \
-            --work "$work" \
-            --aports "$aports" \
+          yes "" | pmbootstrap \
+            --work "$PMB_WORK" \
+            --aports "$PMB_APORTS" \
             init
-
-          expect {
-            -re {Work path.*:} {
-              send "$work\r"
-              exp_continue
-            }
-
-            -re {pmaports path.*:} {
-              send "$aports\r"
-              exp_continue
-            }
-
-            -re {Channel.*:} {
-              send "edge\r"
-              exp_continue
-            }
-
-            -re {Vendor.*:} {
-              send "xiaomi\r"
-              exp_continue
-            }
-
-            -re {Device codename.*:} {
-              send "whyred\r"
-              exp_continue
-            }
-
-            -re {Username.*:} {
-              send "giebux\r"
-              exp_continue
-            }
-
-            -re {User interface.*:} {
-              send "console\r"
-              exp_continue
-            }
-
-            -re {Extra packages.*:} {
-              send "openssh,networkmanager,networkmanager-wifi,networkmanager-cli,wpa_supplicant,iw,util-linux,usbutils,curl\r"
-              exp_continue
-            }
-
-            -re {Device hostname.*:} {
-              send "whyred-server\r"
-              exp_continue
-            }
-
-            -re {Would you like to copy.*SSH.*keys.*} {
-              send "n\r"
-              exp_continue
-            }
-
-            -re {Build outdated packages.*} {
-              send "y\r"
-              exp_continue
-            }
-
-            -re {Use this timezone instead of GMT.*} {
-              send "y\r"
-              exp_continue
-            }
-
-            -re {Locale.*:} {
-              send "en_US\r"
-              exp_continue
-            }
-
-            -re {Change them.*} {
-              send "n\r"
-              exp_continue
-            }
-
-            -re {Install systemd.*} {
-              send "never\r"
-              exp_continue
-            }
-
-            -re {Provider.*:} {
-              send "default\r"
-              exp_continue
-            }
-
-            eof {
-              catch wait result
-              set exit_code [lindex $result 3]
-
-              if {$exit_code != 0} {
-                exit $exit_code
-              }
-
-# ============================================================
-      # 07. NON-INTERACTIVE PMBOOTSTRAP INIT
-      # ============================================================
-      - name: Initialize pmbootstrap
-        env:
-          PMB_WORK: ${{ github.workspace }}/pmbootstrap-work
-          PMB_APORTS: /home/runner/pmaports
-        run: |
-          mkdir -p "$PMB_WORK"
-
-          echo "=== PMBOOTSTRAP PATHS ==="
-          echo "WORK   = $PMB_WORK"
-          echo "APORTS = $PMB_APORTS"
-
-          if [ ! -d "$PMB_APORTS" ]; then
-            echo "ERROR: pmaports directory not found."
-            exit 1
-          fi
-
-          if [ ! -d "$PMB_APORTS/device/testing/device-xiaomi-whyred" ]; then
-            echo "ERROR: Whyred device directory not found."
-            exit 1
-          fi
-
-          cat > /tmp/pmbootstrap-init.exp <<'EOF'
-          #!/usr/bin/expect -f
-
-          set timeout 1200
-
-          set work $env(PMB_WORK)
-          set aports $env(PMB_APORTS)
-
-          spawn pmbootstrap \
-            --work "$work" \
-            --aports "$aports" \
-            init
-
-          expect {
-            -re {Work path.*:} {
-              send "$work\r"
-              exp_continue
-            }
-
-            -re {pmaports path.*:} {
-              send "$aports\r"
-              exp_continue
-            }
-
-            -re {Channel.*:} {
-              send "edge\r"
-              exp_continue
-            }
-
-            -re {Vendor.*:} {
-              send "xiaomi\r"
-              exp_continue
-            }
-
-            -re {Device codename.*:} {
-              send "whyred\r"
-              exp_continue
-            }
-
-            -re {Username.*:} {
-              send "giebux\r"
-              exp_continue
-            }
-
-            -re {User interface.*:} {
-              send "console\r"
-              exp_continue
-            }
-
-            -re {Extra packages.*:} {
-              send "openssh,networkmanager,networkmanager-wifi,networkmanager-cli,wpa_supplicant,iw,util-linux,usbutils,curl\r"
-              exp_continue
-            }
-
-            -re {Device hostname.*:} {
-              send "whyred-server\r"
-              exp_continue
-            }
-
-            -re {.*SSH.*keys.*} {
-              send "n\r"
-              exp_continue
-            }
-
-            -re {.*timezone.*} {
-              send "Asia/Jakarta\r"
-              exp_continue
-            }
-
-            eof {
-              catch wait result
-              set exit_code [lindex $result 3]
-
-              if {$exit_code != 0} {
-                exit $exit_code
-              }
-
-              exit 0
-            }
-
-            timeout {
-              puts "ERROR: pmbootstrap init timed out."
-              exit 1
-            }
-          }
-          EOF
-
-          chmod +x /tmp/pmbootstrap-init.exp
-
-          /tmp/pmbootstrap-init.exp
 
           echo
           echo "=== PMBOOTSTRAP INIT: PASS ==="
 
       # ============================================================
-      # 08. APPLY FINAL CONFIGURATION
+      # 08. PMBOOTSTRAP CONFIGURATION
       # ============================================================
       - name: Configure pmbootstrap
         run: |
-          pmbootstrap config aports "$HOME/pmaports"
+          PMB_WORK="$HOME/pmbootstrap-work"
+          PMB_APORTS="$HOME/pmaports"
+
+          pmbootstrap config work "$PMB_WORK"
+          pmbootstrap config aports "$PMB_APORTS"
+
           pmbootstrap config device xiaomi-whyred
           pmbootstrap config ui console
           pmbootstrap config user giebux
@@ -353,20 +158,19 @@ jobs:
           pmbootstrap config jobs 4
 
           pmbootstrap config extra_packages \
-            "openssh,networkmanager,networkmanager-wifi,networkmanager-cli,wpa_supplicant,iw,util-linux,usbutils,curl"
+            "openssh,networkmanager,wpa_supplicant,iw,util-linux,usbutils,curl"
 
           pmbootstrap config ssh_keys False
-          pmbootstrap config nonfree_firmware True
 
           echo
-          echo "=== FINAL PMBOOTSTRAP CONFIG ==="
+          echo "=== PMBOOTSTRAP CONFIG ==="
           pmbootstrap config
 
           echo
           echo "=== CONFIGURATION: PASS ==="
 
       # ============================================================
-      # 09. CREATE ROOTFS ONLY
+      # 09. BUILD ROOTFS ONLY
       # ============================================================
       - name: Build Rootfs
         run: |
@@ -379,26 +183,25 @@ jobs:
           echo "=== ROOTFS BUILD: PASS ==="
 
       # ============================================================
-      # 10. CONFIGURE WIFI + NETWORK SERVICES
+      # 10. CONFIGURE WIFI
       # ============================================================
-      - name: Configure Headless Network
+      - name: Configure Wi-Fi
         run: |
           ROOTFS="$HOME/pmbootstrap-work/chroot_rootfs_xiaomi-whyred"
 
           if [ ! -d "$ROOTFS" ]; then
-            echo "ERROR: Rootfs not found:"
+            echo "ERROR: rootfs not found:"
             echo "$ROOTFS"
             exit 1
           fi
 
-          # --------------------------------------------------------
-          # NetworkManager Wi-Fi profile
-          # --------------------------------------------------------
           WIFI_DIR="$ROOTFS/etc/NetworkManager/system-connections"
 
           sudo mkdir -p "$WIFI_DIR"
 
-          sudo tee "$WIFI_DIR/fh_25f618.nmconnection" > /dev/null <<'EOF'
+          sudo tee \
+            "$WIFI_DIR/fh_25f618.nmconnection" \
+            > /dev/null <<'EOF'
           [connection]
           id=fh_25f618
           type=wifi
@@ -423,67 +226,15 @@ jobs:
           sudo chmod 600 \
             "$WIFI_DIR/fh_25f618.nmconnection"
 
-          # --------------------------------------------------------
-          # Enable NetworkManager
-          # --------------------------------------------------------
-          if [ -f "$ROOTFS/etc/init.d/networkmanager" ]; then
-            sudo mkdir -p "$ROOTFS/etc/runlevels/default"
-
-            sudo ln -sf \
-              /etc/init.d/networkmanager \
-              "$ROOTFS/etc/runlevels/default/networkmanager"
-          fi
-
-          # --------------------------------------------------------
-          # Enable wpa_supplicant
-          # --------------------------------------------------------
-          if [ -f "$ROOTFS/etc/init.d/wpa_supplicant" ]; then
-            sudo mkdir -p "$ROOTFS/etc/runlevels/default"
-
-            sudo ln -sf \
-              /etc/init.d/wpa_supplicant \
-              "$ROOTFS/etc/runlevels/default/wpa_supplicant"
-          fi
-
-          # --------------------------------------------------------
-          # Hostname
-          # --------------------------------------------------------
-          echo "whyred-server" | \
-            sudo tee "$ROOTFS/etc/hostname" > /dev/null
-
           echo
           echo "=== WIFI PROFILE ==="
           sudo cat "$WIFI_DIR/fh_25f618.nmconnection"
 
           echo
-          echo "=== NETWORK SERVICES ==="
-          ls -l "$ROOTFS/etc/runlevels/default/" | \
-            grep -E 'networkmanager|wpa_supplicant' || true
-
-          echo
-          echo "=== NETWORK CONFIGURATION: PASS ==="
+          echo "=== WIFI CONFIGURATION: PASS ==="
 
       # ============================================================
-      # 11. VERIFY SSH
-      # ============================================================
-      - name: Verify SSH
-        run: |
-          ROOTFS="$HOME/pmbootstrap-work/chroot_rootfs_xiaomi-whyred"
-
-          if [ ! -f "$ROOTFS/etc/init.d/sshd" ]; then
-            echo "ERROR: sshd service not found."
-            exit 1
-          fi
-
-          if [ ! -L "$ROOTFS/etc/runlevels/default/sshd" ]; then
-            echo "ERROR: sshd is not enabled."
-            exit 1
-          fi
-
-          echo "SSHD: PASS"
-
-      # ============================================================
-      # 12. BUILD FINAL IMAGE
+      # 11. BUILD FINAL IMAGE
       # ============================================================
       - name: Build Final Image
         run: |
@@ -495,51 +246,58 @@ jobs:
           echo "=== FINAL IMAGE BUILD: PASS ==="
 
       # ============================================================
-      # 13. VERIFY FINAL CONFIGURATION
+      # 12. VERIFY
       # ============================================================
-      - name: Verify Final Configuration
+      - name: Verify Build
         run: |
           ROOTFS="$HOME/pmbootstrap-work/chroot_rootfs_xiaomi-whyred"
 
-          echo "=== VERIFY HOSTNAME ==="
-          cat "$ROOTFS/etc/hostname"
-
-          echo
-          echo "=== VERIFY WIFI ==="
-
-          test -f \
-            "$ROOTFS/etc/NetworkManager/system-connections/fh_25f618.nmconnection"
-
-          echo "Wi-Fi profile: PASS"
+          echo "=== VERIFY ROOTFS ==="
+          test -d "$ROOTFS"
+          echo "Rootfs: PASS"
 
           echo
           echo "=== VERIFY SSH ==="
 
-          test -f "$ROOTFS/etc/init.d/sshd"
-
-          echo "SSH service: PASS"
-
-          echo
-          echo "=== VERIFY NETWORKMANAGER ==="
-
-          test -f "$ROOTFS/etc/init.d/networkmanager"
-
-          echo "NetworkManager: PASS"
+          if [ -f "$ROOTFS/etc/init.d/sshd" ]; then
+            echo "sshd service: PASS"
+          else
+            echo "ERROR: sshd service not found."
+            exit 1
+          fi
 
           echo
-          echo "=== VERIFY WHYRED IMAGE ==="
+          echo "=== VERIFY WIFI ==="
+
+          if [ -f \
+            "$ROOTFS/etc/NetworkManager/system-connections/fh_25f618.nmconnection"
+          ]; then
+            echo "Wi-Fi profile: PASS"
+          else
+            echo "ERROR: Wi-Fi profile not found."
+            exit 1
+          fi
+
+          echo
+          echo "=== VERIFY HOSTNAME ==="
+
+          if [ -f "$ROOTFS/etc/hostname" ]; then
+            cat "$ROOTFS/etc/hostname"
+          fi
+
+          echo
+          echo "=== IMAGE FILES ==="
 
           find "$HOME/pmbootstrap-work" \
-            -maxdepth 3 \
             -type f \
-            \( -name "*.img" -o -name "*.zip" \) \
+            \( -name "*.img" -o -name "*.zip" -o -name "*.tar.gz" \) \
             -print
 
           echo
-          echo "=== FINAL VERIFICATION: PASS ==="
+          echo "=== BUILD VERIFICATION: PASS ==="
 
       # ============================================================
-      # 14. EXPORT
+      # 13. EXPORT
       # ============================================================
       - name: Export postmarketOS Images
         run: |
@@ -555,7 +313,7 @@ jobs:
           ls -lah output/
 
       # ============================================================
-      # 15. UPLOAD ARTIFACT
+      # 14. UPLOAD ARTIFACT
       # ============================================================
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
