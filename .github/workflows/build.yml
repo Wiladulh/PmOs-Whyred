@@ -221,6 +221,107 @@ jobs:
                 exit $exit_code
               }
 
+# ============================================================
+      # 07. NON-INTERACTIVE PMBOOTSTRAP INIT
+      # ============================================================
+      - name: Initialize pmbootstrap
+        env:
+          PMB_WORK: ${{ github.workspace }}/pmbootstrap-work
+          PMB_APORTS: /home/runner/pmaports
+        run: |
+          mkdir -p "$PMB_WORK"
+
+          echo "=== PMBOOTSTRAP PATHS ==="
+          echo "WORK   = $PMB_WORK"
+          echo "APORTS = $PMB_APORTS"
+
+          if [ ! -d "$PMB_APORTS" ]; then
+            echo "ERROR: pmaports directory not found."
+            exit 1
+          fi
+
+          if [ ! -d "$PMB_APORTS/device/testing/device-xiaomi-whyred" ]; then
+            echo "ERROR: Whyred device directory not found."
+            exit 1
+          fi
+
+          cat > /tmp/pmbootstrap-init.exp <<'EOF'
+          #!/usr/bin/expect -f
+
+          set timeout 1200
+
+          set work $env(PMB_WORK)
+          set aports $env(PMB_APORTS)
+
+          spawn pmbootstrap \
+            --work "$work" \
+            --aports "$aports" \
+            init
+
+          expect {
+            -re {Work path.*:} {
+              send "$work\r"
+              exp_continue
+            }
+
+            -re {pmaports path.*:} {
+              send "$aports\r"
+              exp_continue
+            }
+
+            -re {Channel.*:} {
+              send "edge\r"
+              exp_continue
+            }
+
+            -re {Vendor.*:} {
+              send "xiaomi\r"
+              exp_continue
+            }
+
+            -re {Device codename.*:} {
+              send "whyred\r"
+              exp_continue
+            }
+
+            -re {Username.*:} {
+              send "giebux\r"
+              exp_continue
+            }
+
+            -re {User interface.*:} {
+              send "console\r"
+              exp_continue
+            }
+
+            -re {Extra packages.*:} {
+              send "openssh,networkmanager,networkmanager-wifi,networkmanager-cli,wpa_supplicant,iw,util-linux,usbutils,curl\r"
+              exp_continue
+            }
+
+            -re {Device hostname.*:} {
+              send "whyred-server\r"
+              exp_continue
+            }
+
+            -re {.*SSH.*keys.*} {
+              send "n\r"
+              exp_continue
+            }
+
+            -re {.*timezone.*} {
+              send "Asia/Jakarta\r"
+              exp_continue
+            }
+
+            eof {
+              catch wait result
+              set exit_code [lindex $result 3]
+
+              if {$exit_code != 0} {
+                exit $exit_code
+              }
+
               exit 0
             }
 
