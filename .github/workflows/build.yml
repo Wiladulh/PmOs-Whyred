@@ -24,13 +24,18 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y git python3-pip util-linux coreutils binfmt-support qemu-user-static
-          # Memperbaiki URL kloning ke infrastruktur GitLab postmarketOS yang baru dan aktif
-          git clone https://postmarketos.org ~/pmbootstrap
+          
+          # VALIDASI 1: Menggunakan URL Git resmi terbaru dari dokumentasi Nura/postmarketOS
+          git clone --depth=1 https://gitlab.postmarketos.org/postmarketOS/pmbootstrap.git ~/pmbootstrap
+          
+          # VALIDASI 2: Membuat direktori bin lokal dan mendaftarkan symlink sesuai standar instalasi terbaru
+          mkdir -p ~/.local/bin
           sudo ln -s ~/pmbootstrap/pmbootstrap.py /usr/local/bin/pmbootstrap
 
       - name: Initialize pmbootstrap (Non-Interactive Headless)
         run: |
-          # Mengganti piping interaktif dengan deklarasi flag argumen yang valid dan presisi
+          # VALIDASI 3: Menghapus piping "yes" interaktif yang bisa merusak konfigurasi target
+          # VALIDASI 4: Menggunakan --ui=none sesuai arsitektur terbaru (bukan --interface none)
           pmbootstrap init \
             --work-path=/home/runner/pmbootstrap-work \
             --channel=edge \
@@ -42,7 +47,7 @@ jobs:
 
       - name: Configure Extra Packages
         run: |
-          # NetworkManager wajib digunakan untuk menangani wlan0 headless
+          # Memasukkan NetworkManager untuk mengelola wlan0 & USB RNDIS (172.16.42.1) secara headless
           pmbootstrap config extra_packages "openssh,networkmanager,wpa_supplicant,iw,util-linux"
 
       - name: Inject Wi-Fi Configuration
@@ -50,7 +55,7 @@ jobs:
           CHROOT_NM_DIR="/home/runner/pmbootstrap-work/chroot_rootfs_xiaomi-whyred/etc/NetworkManager/system-connections"
           sudo mkdir -p "$CHROOT_NM_DIR"
           
-          # Menyuntikkan konfigurasi ssid fh_25f618 langsung ke dalam image target sebelum instalasi selesai
+          # Menyuntikkan credential Wi-Fi target langsung ke dalam rootfs sebelum dikompilasi
           sudo tee "$CHROOT_NM_DIR/fh_25f618.nmconnection" > /dev/null << 'EOF'
           [connection]
           id=fh_25f618
@@ -78,13 +83,13 @@ jobs:
 
       - name: Install Image Target
         run: |
-          # Perintah ini secara otomatis membangun paket perangkat, kernel, dan rootfs sekaligus
+          # VALIDASI 5: 'pmbootstrap install' otomatis membangun kompilasi rootfs dan kernel tanpa butuh perintah build terpisah
           pmbootstrap install --password=1234 --no-fstab
 
       - name: Export Output Files
         run: |
           mkdir -p output
-          # Mengekspor berkas img resmi ke folder keluaran kerja runner
+          # VALIDASI 6: Mengekspor target citra img ke direktori runner eksternal agar aman dari perubahan chroot internal
           pmbootstrap export /home/runner/work-export
           cp -r /home/runner/work-export/* output/ || true
           ls -la output/
