@@ -1,0 +1,63 @@
+
+name: Build postmarketOS Whyred Headless Server
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Free Up Disk Space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android
+          df -h
+
+      - name: Install System Dependencies & pmbootstrap
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git python3-pip util-linux coreutils binfmt-support qemu-user-static
+          pip install --upgrade pip
+          pip install pmbootstrap
+
+      - name: Initialize pmbootstrap (Non-Interactive Headless)
+        run: |
+          yes "" | pmbootstrap init \
+            --work-path ~/.local/var/pmbootstrap \
+            --mirror http://dl-cdn.alpinelinux.org/alpine/ \
+            --branch edge \
+            --device xiaomi-whyred \
+            --interface none
+
+      - name: Configure Extra Packages
+        run: |
+          pmbootstrap config extra_packages "openssh,openrc,networking,wpa_supplicant,iw,util-linux"
+
+      - name: Build Rootfs and Device Package
+        run: |
+          pmbootstrap build --force
+
+      - name: Install Image Target
+        run: |
+          pmbootstrap install --no-fde
+
+      - name: Export Output Files
+        run: |
+          mkdir -p output
+          pmbootstrap export
+          cp -r ~/.local/var/pmbootstrap/export/* output/ || true
+          ls -la output/
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+            name: pmos-whyred-headless-server
+            path: output/*
