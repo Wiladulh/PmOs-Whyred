@@ -8,24 +8,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-
-      # ============================================================
-      # 01. CHECKOUT
-      # ============================================================
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # ============================================================
-      # 02. PYTHON
-      # ============================================================
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      # ============================================================
-      # 03. CLEAN RUNNER
-      # ============================================================
       - name: Free Disk Space
         run: |
           sudo rm -rf /usr/share/dotnet
@@ -36,9 +26,6 @@ jobs:
           echo "=== DISK ==="
           df -h
 
-      # ============================================================
-      # 04. HOST DEPENDENCIES
-      # ============================================================
       - name: Install Build Dependencies
         run: |
           sudo apt-get update
@@ -54,23 +41,15 @@ jobs:
             qemu-user-static \
             openssh-client
 
-          echo
           echo "=== DEPENDENCIES ==="
-
           git --version
           python3 --version
           openssl version
           losetup --version
-
           command -v kpartx
-          command -v qemu-aarch64-static
 
-          echo
           echo "=== DEPENDENCY CHECK: PASS ==="
 
-      # ============================================================
-      # 05. PMBOOTSTRAP
-      # ============================================================
       - name: Install Latest pmbootstrap
         run: |
           git clone --depth=1 \
@@ -85,32 +64,23 @@ jobs:
 
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
-          echo
           echo "=== PMBOOTSTRAP ==="
           pmbootstrap --version
 
-      # ============================================================
-      # 06. PMAPORTS
-      # ============================================================
       - name: Clone Official pmaports
         run: |
           git clone --depth=1 \
             https://gitlab.postmarketos.org/postMarketOS/pmaports.git \
             "$HOME/pmaports"
 
-          echo
           echo "=== PMAPORTS ==="
-
           git -C "$HOME/pmaports" branch --show-current
-          git -C "$HOME/pmaports" rev-parse --short HEAD
 
           echo
           echo "=== WHYRED DEVICE CHECK ==="
 
-          DEVICE_DIR="$HOME/pmaports/device/testing/device-xiaomi-whyred"
-
-          if test -d "$DEVICE_DIR"; then
-            echo "device-xiaomi-whyred: PASS"
+          if test -d "$HOME/pmaports/device/testing/device-xiaomi-whyred"; then
+            echo "PASS: device-xiaomi-whyred exists."
           else
             echo "ERROR: device-xiaomi-whyred not found."
 
@@ -123,9 +93,6 @@ jobs:
             exit 1
           fi
 
-      # ============================================================
-      # 07. PMBOOTSTRAP INIT
-      # ============================================================
       - name: Initialize pmbootstrap
         run: |
           PMB_WORK="$HOME/pmbootstrap-work"
@@ -150,9 +117,6 @@ jobs:
           echo
           echo "=== PMBOOTSTRAP INIT: PASS ==="
 
-      # ============================================================
-      # 08. PMBOOTSTRAP CONFIGURATION
-      # ============================================================
       - name: Configure pmbootstrap
         run: |
           PMB_WORK="$HOME/pmbootstrap-work"
@@ -180,83 +144,81 @@ jobs:
           echo
           echo "=== CONFIGURATION: PASS ==="
 
-      # ============================================================
-      # 09. BUILD ROOTFS ONLY
-      # ============================================================
       - name: Build Rootfs
         run: |
           pmbootstrap install \
             --password=1234 \
             --no-image
 
-          echo
-          echo "=== ROOTFS BUILD: PASS ==="
-
-      # ============================================================
-      # 10. CONFIGURE WIFI
-      # ============================================================
       - name: Configure Wi-Fi
         run: |
           ROOTFS="$HOME/pmbootstrap-work/chroot_rootfs_xiaomi-whyred"
-
-          echo "=== ROOTFS CHECK ==="
+          WIFI_DIR="$ROOTFS/etc/NetworkManager/system-connections"
+          WIFI_FILE="$WIFI_DIR/fh_25f618.nmconnection"
 
           if test -d "$ROOTFS"; then
-            echo "Rootfs: PASS"
+            echo "Rootfs found: PASS"
           else
-            echo "ERROR: Rootfs not found:"
+            echo "ERROR: rootfs not found:"
             echo "$ROOTFS"
             exit 1
           fi
 
-          WIFI_DIR="$ROOTFS/etc/NetworkManager/system-connections"
-          WIFI_FILE="$WIFI_DIR/fh_25f618.nmconnection"
-
           sudo mkdir -p "$WIFI_DIR"
 
           sudo tee "$WIFI_FILE" > /dev/null <<'EOF'
-[connection]
-id=fh_25f618
-type=wifi
-autoconnect=true
-autoconnect-priority=100
+          [connection]
+          id=fh_25f618
+          type=wifi
+          autoconnect=true
+          autoconnect-priority=100
 
-[wifi]
-mode=infrastructure
-ssid=fh_25f618
+          [wifi]
+          mode=infrastructure
+          ssid=fh_25f618
 
-[wifi-security]
-key-mgmt=wpa-psk
-psk=11223344
+          [wifi-security]
+          key-mgmt=wpa-psk
+          psk=11223344
 
-[ipv4]
-method=auto
+          [ipv4]
+          method=auto
 
-[ipv6]
-method=auto
-EOF
+          [ipv6]
+          method=auto
+          EOF
 
           sudo chmod 600 "$WIFI_FILE"
 
           echo
           echo "=== WIFI PROFILE ==="
 
-          sudo cat "$WIFI_FILE"
+          if sudo test -f "$WIFI_FILE"; then
+            echo "Wi-Fi profile: PASS"
+          else
+            echo "ERROR: Wi-Fi profile not created."
+            exit 1
+          fi
 
-          echo
-          echo "=== WIFI CONFIGURATION: PASS ==="
+      - name: Build Final Image
+        run: |
+          pmbootstrap install \
+            --password=1234
 
-      # ============================================================
-      # 11. VERIFY ROOTFS CUSTOMIZATION
-      # ============================================================
-      - name: Verify Rootfs Customization
+      - name: Verify Build
         run: |
           ROOTFS="$HOME/pmbootstrap-work/chroot_rootfs_xiaomi-whyred"
+          BOOTIMG="$ROOTFS/boot/boot.img"
+          WIFI_FILE="$ROOTFS/etc/NetworkManager/system-connections/fh_25f618.nmconnection"
 
           echo "=== VERIFY ROOTFS ==="
 
-          test -d "$ROOTFS"
-          echo "Rootfs: PASS"
+          if test -d "$ROOTFS"; then
+            echo "Rootfs: PASS"
+          else
+            echo "ERROR: rootfs not found."
+            exit 1
+          fi
 
           echo
           echo "=== VERIFY SSH ==="
@@ -271,8 +233,6 @@ EOF
           echo
           echo "=== VERIFY WIFI ==="
 
-          WIFI_FILE="$ROOTFS/etc/NetworkManager/system-connections/fh_25f618.nmconnection"
-
           if test -f "$WIFI_FILE"; then
             echo "Wi-Fi profile: PASS"
           else
@@ -281,46 +241,10 @@ EOF
           fi
 
           echo
-          echo "=== VERIFY HOSTNAME ==="
-
-          if test -f "$ROOTFS/etc/hostname"; then
-            echo "Hostname:"
-            cat "$ROOTFS/etc/hostname"
-          else
-            echo "WARNING: /etc/hostname not found."
-          fi
-
-          echo
-          echo "=== ROOTFS VERIFICATION: PASS ==="
-
-      # ============================================================
-      # 12. BUILD FINAL IMAGE
-      # ============================================================
-      - name: Build Final Image
-        run: |
-          pmbootstrap install \
-            --password=1234
-
-          echo
-          echo "=== FINAL IMAGE BUILD: PASS ==="
-
-      # ============================================================
-      # 13. VERIFY FINAL IMAGE
-      # ============================================================
-      - name: Verify Final Image
-        run: |
-          ROOTFS="$HOME/pmbootstrap-work/chroot_rootfs_xiaomi-whyred"
-
-          echo "=== VERIFY FINAL ROOTFS ==="
-
-          test -d "$ROOTFS"
-          echo "Final rootfs: PASS"
-
-          echo
           echo "=== VERIFY BOOT IMAGE ==="
 
-          if test -f "$ROOTFS/boot/boot.img"; then
-            ls -lh "$ROOTFS/boot/boot.img"
+          if test -f "$BOOTIMG"; then
+            ls -lh "$BOOTIMG"
             echo "boot.img: PASS"
           else
             echo "ERROR: boot.img not found."
@@ -328,60 +252,30 @@ EOF
           fi
 
           echo
-          echo "=== FINAL IMAGE VERIFICATION: PASS ==="
+          echo "=== VERIFY HOSTNAME ==="
 
-      # ============================================================
-      # 14. EXPORT
-      # ============================================================
-      - name: Export postmarketOS Images
-        run: |
-          EXPORT_DIR="$HOME/work-export"
-
-          rm -rf "$EXPORT_DIR"
-          mkdir -p "$EXPORT_DIR"
-
-          echo "=== PMBOOTSTRAP EXPORT ==="
-
-          pmbootstrap export "$EXPORT_DIR"
-
-          echo
-          echo "=== EXPORTED FILES ==="
-
-          if test -n "$(find "$EXPORT_DIR" -mindepth 1 -maxdepth 1 -print -quit)"; then
-            ls -lah "$EXPORT_DIR"
+          if test -f "$ROOTFS/etc/hostname"; then
+            cat "$ROOTFS/etc/hostname"
           else
-            echo "ERROR: pmbootstrap export produced no files."
-            exit 1
+            echo "WARNING: hostname file not found."
           fi
 
           echo
-          echo "=== EXPORT: PASS ==="
+          echo "=== BUILD VERIFICATION: PASS ==="
 
-      # ============================================================
-      # 15. PREPARE ARTIFACT
-      # ============================================================
-      - name: Prepare Build Artifact
+      - name: Export postmarketOS Images
         run: |
           rm -rf output
           mkdir -p output
 
+          pmbootstrap export "$HOME/work-export"
+
           cp -a "$HOME/work-export/." output/
 
-          echo "=== ARTIFACT CONTENT ==="
+          echo
+          echo "=== OUTPUT ==="
           ls -lah output/
 
-          if test -n "$(find output -mindepth 1 -maxdepth 1 -print -quit)"; then
-            echo
-            echo "=== ARTIFACT PREPARATION: PASS ==="
-          else
-            echo
-            echo "ERROR: output directory is empty."
-            exit 1
-          fi
-
-      # ============================================================
-      # 16. UPLOAD ARTIFACT
-      # ============================================================
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
         with:
