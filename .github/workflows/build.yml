@@ -14,7 +14,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
       - name: Free Disk Space
         run: |
@@ -22,12 +22,14 @@ jobs:
           sudo rm -rf /opt/ghc
           sudo rm -rf /usr/local/lib/android
           sudo apt-get clean
+
           echo "=== DISK ==="
           df -h
 
       - name: Install Build Dependencies
         run: |
           sudo apt-get update
+
           sudo apt-get install -y \
             git \
             python3 \
@@ -45,6 +47,7 @@ jobs:
           openssl version
           losetup --version
           command -v kpartx
+
           echo "=== DEPENDENCY CHECK: PASS ==="
 
       - name: Install Latest pmbootstrap
@@ -80,11 +83,13 @@ jobs:
             echo "PASS: device-xiaomi-whyred exists."
           else
             echo "ERROR: device-xiaomi-whyred not found."
+
             find "$HOME/pmaports/device" \
               -maxdepth 3 \
               -type d \
-              -name '*whyred*' \
+              -name "*whyred*" \
               -print
+
             exit 1
           fi
 
@@ -161,26 +166,26 @@ jobs:
           sudo mkdir -p "$WIFI_DIR"
 
           sudo tee "$WIFI_FILE" > /dev/null <<'EOF'
-          [connection]
-          id=fh_25f618
-          type=wifi
-          autoconnect=true
-          autoconnect-priority=100
+[connection]
+id=fh_25f618
+type=wifi
+autoconnect=true
+autoconnect-priority=100
 
-          [wifi]
-          mode=infrastructure
-          ssid=fh_25f618
+[wifi]
+mode=infrastructure
+ssid=fh_25f618
 
-          [wifi-security]
-          key-mgmt=wpa-psk
-          psk=11223344
+[wifi-security]
+key-mgmt=wpa-psk
+psk=11223344
 
-          [ipv4]
-          method=auto
+[ipv4]
+method=auto
 
-          [ipv6]
-          method=auto
-          EOF
+[ipv6]
+method=auto
+EOF
 
           sudo chmod 600 "$WIFI_FILE"
 
@@ -194,7 +199,7 @@ jobs:
             exit 1
           fi
 
-      -       - name: Configure USB Networking
+      - name: Configure USB Networking
         run: |
           ROOTFS="$HOME/pmbootstrap-work/chroot_rootfs_xiaomi-whyred"
           DEVICEINFO="$ROOTFS/usr/share/deviceinfo/deviceinfo"
@@ -213,10 +218,12 @@ jobs:
           else
             echo "ERROR: deviceinfo not found:"
             echo "$DEVICEINFO"
+
             find "$ROOTFS/usr/share/deviceinfo" \
               -maxdepth 2 \
               -type f \
               -print 2>/dev/null || true
+
             exit 1
           fi
 
@@ -234,11 +241,11 @@ jobs:
 
           sudo tee -a "$DEVICEINFO" > /dev/null <<'EOF'
 
-          # USB Ethernet Gadget
-          deviceinfo_usb_network_function="ncm.usb0"
-          deviceinfo_usb_server_ip="172.16.42.1"
-          deviceinfo_usb_client_ip="172.16.42.2"
-          EOF
+# USB Ethernet Gadget
+deviceinfo_usb_network_function="ncm.usb0"
+deviceinfo_usb_server_ip="172.16.42.1"
+deviceinfo_usb_client_ip="172.16.42.2"
+EOF
 
           echo
           echo "=== USB NETWORK CONFIG ==="
@@ -249,8 +256,9 @@ jobs:
           echo "USB IPv4 server: 172.16.42.1"
           echo "USB IPv4 client: 172.16.42.2"
           echo "IPv6: link-local autoconfiguration preserved"
+
           echo "=== USB NETWORK CONFIGURATION: PASS ==="
-          
+
       - name: Build Final Image
         run: |
           pmbootstrap install \
@@ -261,7 +269,7 @@ jobs:
           ROOTFS="$HOME/pmbootstrap-work/chroot_rootfs_xiaomi-whyred"
           BOOTIMG="$ROOTFS/boot/boot.img"
           WIFI_FILE="$ROOTFS/etc/NetworkManager/system-connections/fh_25f618.nmconnection"
-          DEVICEINFO="$ROOTFS/etc/deviceinfo"
+          DEVICEINFO="$ROOTFS/usr/share/deviceinfo/deviceinfo"
 
           echo "=== VERIFY ROOTFS ==="
 
@@ -298,6 +306,8 @@ jobs:
           echo "=== VERIFY USB NETWORK ==="
 
           if test -f "$DEVICEINFO"; then
+            echo "deviceinfo: PASS"
+
             if grep -q '^deviceinfo_usb_network_function="ncm.usb0"' "$DEVICEINFO"; then
               echo "USB NCM configuration: PASS"
             else
