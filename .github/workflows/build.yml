@@ -25,14 +25,18 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y git python3 openssl util-linux coreutils binfmt-support qemu-user-static openssh-client
           
-          # KLONING VALID: Mengambil perkakas langsung dari repositori server mandiri GitLab resmi yang aktif
+          # Clones directly from the modern, active self-hosted GitLab infrastructure
           git clone --depth=1 https://postmarketos.org ~/pmbootstrap
           sudo ln -s ~/pmbootstrap/pmbootstrap.py /usr/local/bin/pmbootstrap
           pmbootstrap --version
 
+      - name: Pre-clone Official Pmaports Locally
+        run: |
+          # Clones the build recipes to a local directory, entirely bypassing the broken legacy fallback URLs
+          git clone --depth=1 https://postmarketos.org ~/pmaports
+
       - name: Inject Valid Configuration File (Bypass pmbootstrap init)
         run: |
-          # MEMOTONG BUG: Membuat berkas konfigurasi default murni langsung di profil runner agar tidak memicu wizard interaktif atau kloning URL usang
           mkdir -p ~/.config
           cat << 'EOF' > ~/.config/pmbootstrap.cfg
           [pmbootstrap]
@@ -47,21 +51,15 @@ jobs:
           timezone = Asia/Jakarta
           extra_packages = openssh,networkmanager,wpa_supplicant,iw,util-linux
           mirrors_alpine = http://dl-cdn.alpinelinux.org/alpine/
+          aports = /home/runner/pmaports
           EOF
-
-      - name: Pull and Synchronize Valid Pmaports
-        run: |
-          # Memaksa pmbootstrap mengunduh komponen pmaports resmi langsung ke folder kerja yang baru sebelum instalasi dilakukan
-          mkdir -p /home/runner/pmbootstrap-work/cache_git
-          git clone --depth=1 https://postmarketos.org /home/runner/pmbootstrap-work/cache_git/pmaports
 
       - name: Inject Wi-Fi Configuration Into Target Rootfs
         run: |
-          # Membuat folder sistem NetworkManager secara manual sebelum citra dibangun
           CHROOT_NM_DIR="/home/runner/pmbootstrap-work/chroot_rootfs_xiaomi-whyred/etc/NetworkManager/system-connections"
           sudo mkdir -p "$CHROOT_NM_DIR"
           
-          # Mengunci detail SSID fh_25f618 ke dalam system-connections gambar
+          # Injects your home Wi-Fi profile directly into the system image skeleton
           sudo tee "$CHROOT_NM_DIR/fh_25f618.nmconnection" > /dev/null << 'EOF'
           [connection]
           id=fh_25f618
@@ -85,19 +83,21 @@ jobs:
           method=auto
           EOF
 
-          # Aturan hak akses ketat (600) agar tidak ditolak oleh kernel keamanan pasca-boot
+          # Applies the mandatory secure 600 file permissions required by Linux systems
           sudo chmod 600 "$CHROOT_NM_DIR/fh_25f618.nmconnection"
 
       - name: Compile and Install Image Target
+        env:
+          # Enforces offline execution mode to prevent legacy remote repository connection timeouts
+          PMBOOTSTRAP_OFFLINE: "1"
         run: |
-          # Mengeksekusi kompilasi otomatis berbasis konfigurasi statis yang sudah disuntikkan
-          pmbootstrap install --password=1234 --no-fstab
+          # Executes the automated rootfs assembly process using the pre-cloned local aports database
+          pmbootstrap --aports /home/runner/pmaports install --password=1234 --no-fstab
 
       - name: Export Output Files
         run: |
           mkdir -p output
-          # Mengekspor berkas citra biner mentah (.img) dari isolasi chroot ke folder runner eksternal
-          pmbootstrap export /home/runner/work-export
+          pmbootstrap --aports /home/runner/pmaports export /home/runner/work-export
           cp -r /home/runner/work-export/* output/ || true
           ls -la output/
 
