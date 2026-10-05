@@ -22,14 +22,11 @@ jobs:
           sudo rm -rf /opt/ghc
           sudo rm -rf /usr/local/lib/android
           sudo apt-get clean
-
-          echo "=== DISK ==="
           df -h
 
       - name: Install Build Dependencies
         run: |
           sudo apt-get update
-
           sudo apt-get install -y \
             git \
             python3 \
@@ -41,7 +38,6 @@ jobs:
             qemu-user-static \
             openssh-client
 
-          echo "=== DEPENDENCIES ==="
           git --version
           python3 --version
           openssl version
@@ -64,7 +60,6 @@ jobs:
 
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
-          echo "=== PMBOOTSTRAP ==="
           pmbootstrap --version
 
       - name: Clone Official pmaports
@@ -76,20 +71,17 @@ jobs:
           echo "=== PMAPORTS ==="
           git -C "$HOME/pmaports" branch --show-current
 
-          echo
           echo "=== WHYRED DEVICE CHECK ==="
 
           if test -d "$HOME/pmaports/device/testing/device-xiaomi-whyred"; then
             echo "PASS: device-xiaomi-whyred exists."
           else
             echo "ERROR: device-xiaomi-whyred not found."
-
             find "$HOME/pmaports/device" \
               -maxdepth 3 \
               -type d \
               -name "*whyred*" \
               -print
-
             exit 1
           fi
 
@@ -100,13 +92,6 @@ jobs:
 
           mkdir -p "$PMB_WORK"
 
-          echo "=== PMBOOTSTRAP INIT ==="
-          echo "WORK:   $PMB_WORK"
-          echo "APORTS: $PMB_APORTS"
-
-          test -d "$PMB_APORTS"
-          test -d "$PMB_APORTS/device/testing/device-xiaomi-whyred"
-
           cd "$HOME"
 
           yes "" | pmbootstrap \
@@ -114,7 +99,6 @@ jobs:
             --aports "$PMB_APORTS" \
             init
 
-          echo
           echo "=== PMBOOTSTRAP INIT: PASS ==="
 
       - name: Configure pmbootstrap
@@ -131,16 +115,10 @@ jobs:
           pmbootstrap config timezone Asia/Jakarta
           pmbootstrap config jobs 4
 
-          pmbootstrap config extra_packages \
-            "openssh,networkmanager,wpa_supplicant,iw,util-linux,usbutils,curl"
+          pmbootstrap config extra_packages "openssh,networkmanager,wpa_supplicant,iw,util-linux,usbutils,curl"
 
           pmbootstrap config ssh_keys False
 
-          echo
-          echo "=== PMBOOTSTRAP CONFIG ==="
-          pmbootstrap config
-
-          echo
           echo "=== CONFIGURATION: PASS ==="
 
       - name: Build Rootfs
@@ -155,42 +133,38 @@ jobs:
           WIFI_DIR="$ROOTFS/etc/NetworkManager/system-connections"
           WIFI_FILE="$WIFI_DIR/fh_25f618.nmconnection"
 
-          if test -d "$ROOTFS"; then
-            echo "Rootfs found: PASS"
-          else
-            echo "ERROR: rootfs not found:"
-            echo "$ROOTFS"
-            exit 1
-          fi
+          test -d "$ROOTFS"
 
           sudo mkdir -p "$WIFI_DIR"
 
-          sudo tee "$WIFI_FILE" > /dev/null <<'EOF'
-[connection]
-id=fh_25f618
-type=wifi
-autoconnect=true
-autoconnect-priority=100
+          sudo python3 -c '
+          from pathlib import Path
 
-[wifi]
-mode=infrastructure
-ssid=fh_25f618
+          p = Path("'"$WIFI_FILE"'")
 
-[wifi-security]
-key-mgmt=wpa-psk
-psk=11223344
+          p.write_text("""[connection]
+          id=fh_25f618
+          type=wifi
+          autoconnect=true
+          autoconnect-priority=100
 
-[ipv4]
-method=auto
+          [wifi]
+          mode=infrastructure
+          ssid=fh_25f618
 
-[ipv6]
-method=auto
-EOF
+          [wifi-security]
+          key-mgmt=wpa-psk
+          psk=11223344
 
-          sudo chmod 600 "$WIFI_FILE"
+          [ipv4]
+          method=auto
 
-          echo
-          echo "=== WIFI PROFILE ==="
+          [ipv6]
+          method=auto
+          """)
+
+          p.chmod(0o600)
+          '
 
           if sudo test -f "$WIFI_FILE"; then
             echo "Wi-Fi profile: PASS"
@@ -206,58 +180,33 @@ EOF
 
           echo "=== USB NETWORKING ==="
 
-          if test -d "$ROOTFS"; then
-            echo "Rootfs: PASS"
-          else
-            echo "ERROR: rootfs not found."
-            exit 1
-          fi
+          test -d "$ROOTFS"
 
           if test -f "$DEVICEINFO"; then
             echo "deviceinfo: PASS"
           else
             echo "ERROR: deviceinfo not found:"
             echo "$DEVICEINFO"
-
-            find "$ROOTFS/usr/share/deviceinfo" \
-              -maxdepth 2 \
-              -type f \
-              -print 2>/dev/null || true
-
             exit 1
           fi
 
-          sudo sed -i \
-            '/^deviceinfo_usb_network_function=/d' \
-            "$DEVICEINFO"
+          sudo sed -i '/^deviceinfo_usb_network_function=/d' "$DEVICEINFO"
+          sudo sed -i '/^deviceinfo_usb_server_ip=/d' "$DEVICEINFO"
+          sudo sed -i '/^deviceinfo_usb_client_ip=/d' "$DEVICEINFO"
 
-          sudo sed -i \
-            '/^deviceinfo_usb_server_ip=/d' \
-            "$DEVICEINFO"
+          sudo sh -c "printf '%s\n' \
+            'deviceinfo_usb_network_function=\"ncm.usb0\"' \
+            'deviceinfo_usb_server_ip=\"172.16.42.1\"' \
+            'deviceinfo_usb_client_ip=\"172.16.42.2\"' \
+            >> '$DEVICEINFO'"
 
-          sudo sed -i \
-            '/^deviceinfo_usb_client_ip=/d' \
-            "$DEVICEINFO"
-
-          sudo tee -a "$DEVICEINFO" > /dev/null <<'EOF'
-
-# USB Ethernet Gadget
-deviceinfo_usb_network_function="ncm.usb0"
-deviceinfo_usb_server_ip="172.16.42.1"
-deviceinfo_usb_client_ip="172.16.42.2"
-EOF
-
-          echo
           echo "=== USB NETWORK CONFIG ==="
-          sudo tail -n 8 "$DEVICEINFO"
+          sudo tail -n 6 "$DEVICEINFO"
 
-          echo
           echo "USB NCM: PASS"
           echo "USB IPv4 server: 172.16.42.1"
           echo "USB IPv4 client: 172.16.42.2"
           echo "IPv6: link-local autoconfiguration preserved"
-
-          echo "=== USB NETWORK CONFIGURATION: PASS ==="
 
       - name: Build Final Image
         run: |
@@ -273,12 +222,8 @@ EOF
 
           echo "=== VERIFY ROOTFS ==="
 
-          if test -d "$ROOTFS"; then
-            echo "Rootfs: PASS"
-          else
-            echo "ERROR: rootfs not found."
-            exit 1
-          fi
+          test -d "$ROOTFS"
+          echo "Rootfs: PASS"
 
           echo
           echo "=== VERIFY SSH ==="
@@ -307,31 +252,19 @@ EOF
 
           if test -f "$DEVICEINFO"; then
             echo "deviceinfo: PASS"
-
-            if grep -q '^deviceinfo_usb_network_function="ncm.usb0"' "$DEVICEINFO"; then
-              echo "USB NCM configuration: PASS"
-            else
-              echo "ERROR: USB NCM configuration not found."
-              exit 1
-            fi
-
-            if grep -q '^deviceinfo_usb_server_ip="172.16.42.1"' "$DEVICEINFO"; then
-              echo "USB server IPv4: PASS"
-            else
-              echo "ERROR: USB server IPv4 not found."
-              exit 1
-            fi
-
-            if grep -q '^deviceinfo_usb_client_ip="172.16.42.2"' "$DEVICEINFO"; then
-              echo "USB client IPv4: PASS"
-            else
-              echo "ERROR: USB client IPv4 not found."
-              exit 1
-            fi
           else
             echo "ERROR: deviceinfo not found."
             exit 1
           fi
+
+          grep -q '^deviceinfo_usb_network_function="ncm.usb0"' "$DEVICEINFO"
+          echo "USB NCM configuration: PASS"
+
+          grep -q '^deviceinfo_usb_server_ip="172.16.42.1"' "$DEVICEINFO"
+          echo "USB server IPv4: PASS"
+
+          grep -q '^deviceinfo_usb_client_ip="172.16.42.2"' "$DEVICEINFO"
+          echo "USB client IPv4: PASS"
 
           echo
           echo "=== VERIFY BOOT IMAGE ==="
@@ -365,7 +298,6 @@ EOF
 
           cp -a "$HOME/work-export/." output/
 
-          echo
           echo "=== OUTPUT ==="
           ls -lah output/
 
