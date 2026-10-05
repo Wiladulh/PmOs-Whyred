@@ -54,14 +54,18 @@ jobs:
             qemu-user-static \
             openssh-client
 
+          echo
           echo "=== DEPENDENCIES ==="
+
           git --version
           python3 --version
           openssl version
           losetup --version
+
           command -v kpartx
           command -v qemu-aarch64-static
 
+          echo
           echo "=== DEPENDENCY CHECK: PASS ==="
 
       # ============================================================
@@ -81,6 +85,7 @@ jobs:
 
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
+          echo
           echo "=== PMBOOTSTRAP ==="
           pmbootstrap --version
 
@@ -93,14 +98,20 @@ jobs:
             https://gitlab.postmarketos.org/postMarketOS/pmaports.git \
             "$HOME/pmaports"
 
+          echo
           echo "=== PMAPORTS ==="
+
           git -C "$HOME/pmaports" branch --show-current
           git -C "$HOME/pmaports" rev-parse --short HEAD
 
           echo
           echo "=== WHYRED DEVICE CHECK ==="
 
-          if [ ! -d "$HOME/pmaports/device/testing/device-xiaomi-whyred" ]; then
+          DEVICE_DIR="$HOME/pmaports/device/testing/device-xiaomi-whyred"
+
+          if test -d "$DEVICE_DIR"; then
+            echo "device-xiaomi-whyred: PASS"
+          else
             echo "ERROR: device-xiaomi-whyred not found."
 
             find "$HOME/pmaports/device" \
@@ -111,8 +122,6 @@ jobs:
 
             exit 1
           fi
-
-          echo "PASS: device-xiaomi-whyred exists."
 
       # ============================================================
       # 07. PMBOOTSTRAP INIT
@@ -159,9 +168,6 @@ jobs:
           pmbootstrap config timezone Asia/Jakarta
           pmbootstrap config jobs 4
 
-          # Explicitly select OpenRC for the headless server.
-          pmbootstrap config service_manager openrc
-
           pmbootstrap config extra_packages \
             "openssh,networkmanager,wpa_supplicant,iw,util-linux,usbutils,curl"
 
@@ -193,69 +199,62 @@ jobs:
         run: |
           ROOTFS="$HOME/pmbootstrap-work/chroot_rootfs_xiaomi-whyred"
 
-          if [ ! -d "$ROOTFS" ]; then
-            echo "ERROR: rootfs not found:"
+          echo "=== ROOTFS CHECK ==="
+
+          if test -d "$ROOTFS"; then
+            echo "Rootfs: PASS"
+          else
+            echo "ERROR: Rootfs not found:"
             echo "$ROOTFS"
             exit 1
           fi
 
           WIFI_DIR="$ROOTFS/etc/NetworkManager/system-connections"
+          WIFI_FILE="$WIFI_DIR/fh_25f618.nmconnection"
 
           sudo mkdir -p "$WIFI_DIR"
 
-          sudo tee \
-            "$WIFI_DIR/fh_25f618.nmconnection" \
-            > /dev/null <<'EOF'
-          [connection]
-          id=fh_25f618
-          type=wifi
-          autoconnect=true
-          autoconnect-priority=100
+          sudo tee "$WIFI_FILE" > /dev/null <<'EOF'
+[connection]
+id=fh_25f618
+type=wifi
+autoconnect=true
+autoconnect-priority=100
 
-          [wifi]
-          mode=infrastructure
-          ssid=fh_25f618
+[wifi]
+mode=infrastructure
+ssid=fh_25f618
 
-          [wifi-security]
-          key-mgmt=wpa-psk
-          psk=11223344
+[wifi-security]
+key-mgmt=wpa-psk
+psk=11223344
 
-          [ipv4]
-          method=auto
+[ipv4]
+method=auto
 
-          [ipv6]
-          method=auto
-          EOF
+[ipv6]
+method=auto
+EOF
 
-          sudo chmod 600 \
-            "$WIFI_DIR/fh_25f618.nmconnection"
+          sudo chmod 600 "$WIFI_FILE"
 
           echo
           echo "=== WIFI PROFILE ==="
-          sudo cat "$WIFI_DIR/fh_25f618.nmconnection"
+
+          sudo cat "$WIFI_FILE"
 
           echo
           echo "=== WIFI CONFIGURATION: PASS ==="
 
       # ============================================================
-      # 11. BUILD FINAL IMAGE
+      # 11. VERIFY ROOTFS CUSTOMIZATION
       # ============================================================
-      - name: Build Final Image
-        run: |
-          pmbootstrap install \
-            --password=1234
-
-          echo
-          echo "=== FINAL IMAGE BUILD: PASS ==="
-
-# ============================================================
-      # 12. VERIFY
-      # ============================================================
-      - name: Verify Build
+      - name: Verify Rootfs Customization
         run: |
           ROOTFS="$HOME/pmbootstrap-work/chroot_rootfs_xiaomi-whyred"
 
           echo "=== VERIFY ROOTFS ==="
+
           test -d "$ROOTFS"
           echo "Rootfs: PASS"
 
@@ -272,7 +271,9 @@ jobs:
           echo
           echo "=== VERIFY WIFI ==="
 
-          if test -f "$ROOTFS/etc/NetworkManager/system-connections/fh_25f618.nmconnection"; then
+          WIFI_FILE="$ROOTFS/etc/NetworkManager/system-connections/fh_25f618.nmconnection"
+
+          if test -f "$WIFI_FILE"; then
             echo "Wi-Fi profile: PASS"
           else
             echo "ERROR: Wi-Fi profile not found."
@@ -290,38 +291,96 @@ jobs:
           fi
 
           echo
-          echo "=== VERIFY IMAGE OUTPUT ==="
+          echo "=== ROOTFS VERIFICATION: PASS ==="
 
-          find "$HOME/pmbootstrap-work" \
-            -type f \
-            \( \
-              -name "*.img" \
-              -o -name "*.zip" \
-              -o -name "*.tar.gz" \
-            \) \
-            -print
+      # ============================================================
+      # 12. BUILD FINAL IMAGE
+      # ============================================================
+      - name: Build Final Image
+        run: |
+          pmbootstrap install \
+            --password=1234
 
           echo
-          echo "=== BUILD VERIFICATION: PASS ==="
+          echo "=== FINAL IMAGE BUILD: PASS ==="
 
       # ============================================================
-      # 13. EXPORT
+      # 13. VERIFY FINAL IMAGE
+      # ============================================================
+      - name: Verify Final Image
+        run: |
+          ROOTFS="$HOME/pmbootstrap-work/chroot_rootfs_xiaomi-whyred"
+
+          echo "=== VERIFY FINAL ROOTFS ==="
+
+          test -d "$ROOTFS"
+          echo "Final rootfs: PASS"
+
+          echo
+          echo "=== VERIFY BOOT IMAGE ==="
+
+          if test -f "$ROOTFS/boot/boot.img"; then
+            ls -lh "$ROOTFS/boot/boot.img"
+            echo "boot.img: PASS"
+          else
+            echo "ERROR: boot.img not found."
+            exit 1
+          fi
+
+          echo
+          echo "=== FINAL IMAGE VERIFICATION: PASS ==="
+
+      # ============================================================
+      # 14. EXPORT
       # ============================================================
       - name: Export postmarketOS Images
+        run: |
+          EXPORT_DIR="$HOME/work-export"
+
+          rm -rf "$EXPORT_DIR"
+          mkdir -p "$EXPORT_DIR"
+
+          echo "=== PMBOOTSTRAP EXPORT ==="
+
+          pmbootstrap export "$EXPORT_DIR"
+
+          echo
+          echo "=== EXPORTED FILES ==="
+
+          if test -n "$(find "$EXPORT_DIR" -mindepth 1 -maxdepth 1 -print -quit)"; then
+            ls -lah "$EXPORT_DIR"
+          else
+            echo "ERROR: pmbootstrap export produced no files."
+            exit 1
+          fi
+
+          echo
+          echo "=== EXPORT: PASS ==="
+
+      # ============================================================
+      # 15. PREPARE ARTIFACT
+      # ============================================================
+      - name: Prepare Build Artifact
         run: |
           rm -rf output
           mkdir -p output
 
-          pmbootstrap export "$HOME/work-export"
-
           cp -a "$HOME/work-export/." output/
 
-          echo
-          echo "=== OUTPUT ==="
+          echo "=== ARTIFACT CONTENT ==="
           ls -lah output/
 
+          if test -n "$(find output -mindepth 1 -maxdepth 1 -print -quit)"; then
+            echo
+            echo "=== ARTIFACT PREPARATION: PASS ==="
+          else
+            echo
+            echo "ERROR: output directory is empty."
+            exit 1
+          fi
+
       # ============================================================
-      # 14. UPLOAD ARTIFACT
+      # 16. UPLOAD ARTIFACT
       # ============================================================
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
