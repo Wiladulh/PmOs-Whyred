@@ -20,44 +20,48 @@ jobs:
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android
           df -h
 
-      - name: Install System Dependencies & pmbootstrap
+      - name: Install System Dependencies & pmbootstrap via Git
         run: |
           sudo apt-get update
-          sudo apt-get install -y git python3-pip util-linux coreutils binfmt-support qemu-user-static
-          # Menggunakan metode instalasi pip stabil terbaru untuk memastikan biner internal sinkron
-          pip install --upgrade pip
-          pip install pmbootstrap
-
-      - name: Initialize pmbootstrap Base Config
-        run: |
-          # Menggunakan flag bawaan non-interaktif untuk menghindari crash wizard pengisian data
-          pmbootstrap -y init
-
-      - name: Overwrite Mirror and Repository Settings
-        run: |
-          # VALIDASI UTAMA: Memaksa pmbootstrap mengarahkan berkas paket (pmaports) ke repositori mandiri baru
-          # Ini memotong bug 'repository not found' dari domain lama yang sudah mati
-          pmbootstrap config pmaports /home/runner/pmbootstrap-work/cache_git/pmaports
-          pmbootstrap config mirrordir /home/runner/pmbootstrap-work/cache_pkgs
+          sudo apt-get install -y git python3 openssl util-linux coreutils binfmt-support qemu-user-static openssh-client
           
-          # Konfigurasi spesifik headless untuk Xiaomi Redmi Note 5 (whyred) Anda
-          pmbootstrap config work /home/runner/pmbootstrap-work
-          pmbootstrap config channel edge
-          pmbootstrap config device_vendor xiaomi
-          pmbootstrap config device xiaomi-whyred
-          pmbootstrap config ui none
-          pmbootstrap config username giebux
-          pmbootstrap config timezone Asia/Jakarta
-          
-          # Mendaftarkan paket dasar jaringan tanpa antarmuka grafis
-          pmbootstrap config extra_packages "openssh,networkmanager,wpa_supplicant,iw,util-linux"
+          # KLONING VALID: Mengambil perkakas langsung dari repositori server mandiri GitLab resmi yang aktif
+          git clone --depth=1 https://postmarketos.org ~/pmbootstrap
+          sudo ln -s ~/pmbootstrap/pmbootstrap.py /usr/local/bin/pmbootstrap
+          pmbootstrap --version
 
-      - name: Inject Wi-Fi Configuration
+      - name: Inject Valid Configuration File (Bypass pmbootstrap init)
         run: |
+          # MEMOTONG BUG: Membuat berkas konfigurasi default murni langsung di profil runner agar tidak memicu wizard interaktif atau kloning URL usang
+          mkdir -p ~/.config
+          cat << 'EOF' > ~/.config/pmbootstrap.cfg
+          [pmbootstrap]
+          work = /home/runner/pmbootstrap-work
+          client_version = 3.0.0
+          jobs = 4
+          channel = edge
+          device = xiaomi-whyred
+          vendor = xiaomi
+          ui = none
+          user = giebux
+          timezone = Asia/Jakarta
+          extra_packages = openssh,networkmanager,wpa_supplicant,iw,util-linux
+          mirrors_alpine = http://dl-cdn.alpinelinux.org/alpine/
+          EOF
+
+      - name: Pull and Synchronize Valid Pmaports
+        run: |
+          # Memaksa pmbootstrap mengunduh komponen pmaports resmi langsung ke folder kerja yang baru sebelum instalasi dilakukan
+          mkdir -p /home/runner/pmbootstrap-work/cache_git
+          git clone --depth=1 https://postmarketos.org /home/runner/pmbootstrap-work/cache_git/pmaports
+
+      - name: Inject Wi-Fi Configuration Into Target Rootfs
+        run: |
+          # Membuat folder sistem NetworkManager secara manual sebelum citra dibangun
           CHROOT_NM_DIR="/home/runner/pmbootstrap-work/chroot_rootfs_xiaomi-whyred/etc/NetworkManager/system-connections"
           sudo mkdir -p "$CHROOT_NM_DIR"
           
-          # Membakar konfigurasi SSID rumah Anda agar langsung tersambung otomatis saat boot
+          # Mengunci detail SSID fh_25f618 ke dalam system-connections gambar
           sudo tee "$CHROOT_NM_DIR/fh_25f618.nmconnection" > /dev/null << 'EOF'
           [connection]
           id=fh_25f618
@@ -81,17 +85,18 @@ jobs:
           method=auto
           EOF
 
+          # Aturan hak akses ketat (600) agar tidak ditolak oleh kernel keamanan pasca-boot
           sudo chmod 600 "$CHROOT_NM_DIR/fh_25f618.nmconnection"
 
-      - name: Install Image Target
+      - name: Compile and Install Image Target
         run: |
-          # Memulai kompilasi aman kernel kustom dan pengemasan citra rootfs mentah
+          # Mengeksekusi kompilasi otomatis berbasis konfigurasi statis yang sudah disuntikkan
           pmbootstrap install --password=1234 --no-fstab
 
       - name: Export Output Files
         run: |
           mkdir -p output
-          # Pengeksporan biner murni keluar dari lingkungan chroot ke sistem runner
+          # Mengekspor berkas citra biner mentah (.img) dari isolasi chroot ke folder runner eksternal
           pmbootstrap export /home/runner/work-export
           cp -r /home/runner/work-export/* output/ || true
           ls -la output/
