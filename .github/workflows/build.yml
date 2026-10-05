@@ -25,29 +25,27 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y git python3-pip util-linux coreutils binfmt-support qemu-user-static
           
-          # VALIDASI 1: Menggunakan URL Git resmi terbaru dari dokumentasi Nura/postmarketOS
-          git clone --depth=1 https://gitlab.postmarketos.org/postmarketOS/pmbootstrap.git ~/pmbootstrap
-          
-          # VALIDASI 2: Membuat direktori bin lokal dan mendaftarkan symlink sesuai standar instalasi terbaru
-          mkdir -p ~/.local/bin
+          # Mengklon dari infrastruktur repositori GitLab resmi yang baru
+          git clone --depth=1 https://postmarketos.org ~/pmbootstrap
           sudo ln -s ~/pmbootstrap/pmbootstrap.py /usr/local/bin/pmbootstrap
 
-      - name: Initialize pmbootstrap (Non-Interactive Headless)
+      - name: Initialize pmbootstrap (Non-Interactive Target)
         run: |
-          # VALIDASI 3: Menghapus piping "yes" interaktif yang bisa merusak konfigurasi target
-          # VALIDASI 4: Menggunakan --ui=none sesuai arsitektur terbaru (bukan --interface none)
-          pmbootstrap init \
-            --work-path=/home/runner/pmbootstrap-work \
-            --channel=edge \
-            --vendor=xiaomi \
-            --device=whyred \
-            --ui=none \
-            --username=giebux \
-            --timezone=Asia/Jakarta
+          # Perbaikan Sintaksis Utama: Menggunakan flag '-y' bawaan agar proses init berjalan non-interaktif tanpa error argument
+          pmbootstrap -y init
 
-      - name: Configure Extra Packages
+      - name: Configure Custom Headless Variables
         run: |
-          # Memasukkan NetworkManager untuk mengelola wlan0 & USB RNDIS (172.16.42.1) secara headless
+          # Menyesuaikan konfigurasi default dengan kebutuhan Redmi Note 5 headless Anda menggunakan sub-command resmi
+          pmbootstrap config work /home/runner/pmbootstrap-work
+          pmbootstrap config channel edge
+          pmbootstrap config device_vendor xiaomi
+          pmbootstrap config device xiaomi-whyred
+          pmbootstrap config ui none
+          pmbootstrap config username giebux
+          pmbootstrap config timezone Asia/Jakarta
+          
+          # Mendaftarkan paket utilitas jaringan & remote SSH
           pmbootstrap config extra_packages "openssh,networkmanager,wpa_supplicant,iw,util-linux"
 
       - name: Inject Wi-Fi Configuration
@@ -55,7 +53,7 @@ jobs:
           CHROOT_NM_DIR="/home/runner/pmbootstrap-work/chroot_rootfs_xiaomi-whyred/etc/NetworkManager/system-connections"
           sudo mkdir -p "$CHROOT_NM_DIR"
           
-          # Menyuntikkan credential Wi-Fi target langsung ke dalam rootfs sebelum dikompilasi
+          # Membakar konfigurasi profil ssid target Anda
           sudo tee "$CHROOT_NM_DIR/fh_25f618.nmconnection" > /dev/null << 'EOF'
           [connection]
           id=fh_25f618
@@ -83,13 +81,13 @@ jobs:
 
       - name: Install Image Target
         run: |
-          # VALIDASI 5: 'pmbootstrap install' otomatis membangun kompilasi rootfs dan kernel tanpa butuh perintah build terpisah
+          # Melakukan kompilasi citra kernel dan rootfs secara otomatis
           pmbootstrap install --password=1234 --no-fstab
 
       - name: Export Output Files
         run: |
           mkdir -p output
-          # VALIDASI 6: Mengekspor target citra img ke direktori runner eksternal agar aman dari perubahan chroot internal
+          # Pengeksporan biner keluaran ke folder lokal runner
           pmbootstrap export /home/runner/work-export
           cp -r /home/runner/work-export/* output/ || true
           ls -la output/
