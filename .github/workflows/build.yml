@@ -1,115 +1,299 @@
 name: Build postmarketOS Whyred Headless Server
 
 on:
-  workflow_dispatch:
+workflow_dispatch:
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+build:
+runs-on: ubuntu-latest
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+steps:
 
-      - name: Free Up Disk Space & Clean Old Caches
-        run: |
-          sudo rm -f ~/.config/pmbootstrap.cfg
-          sudo rm -f ~/.config/pmbootstrap_v3.cfg
-          sudo rm -rf ~/.local/var/pmbootstrap
-          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android
-          df -h
+  # ============================================================
+  # 01. CHECKOUT
+  # ============================================================
+  - name: Checkout Repository
+    uses: actions/checkout@v4
 
-      - name: Install System Dependencies & pmbootstrap via Git
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y git python3 openssl util-linux coreutils binfmt-support qemu-user-static openssh-client
-          
-          # Kloning pmbootstrap menggunakan repositori GitLab resmi yang valid
-          git clone --depth=1 https://postmarketos.org ~/pmbootstrap
-          sudo ln -s ~/pmbootstrap/pmbootstrap.py /usr/local/bin/pmbootstrap
-          pmbootstrap --version
 
-      - name: Pre-clone Official Pmaports Locally
-        run: |
-          # PERBAIKAN KRITIS: Menggunakan URL Git asli yang lengkap dengan akhiran .git agar tidak diblokir server
-          git clone --depth=1 https://postmarketos.org ~/pmaports
+  # ============================================================
+  # 02. PYTHON
+  # ============================================================
+  - name: Set up Python
+    uses: actions/setup-python@v5
+    with:
+      python-version: '3.11'
 
-      - name: Inject Valid Configuration File
-        run: |
-          mkdir -p ~/.config
-          cat << 'EOF' > ~/.config/pmbootstrap.cfg
-          [pmbootstrap]
-          work = /home/runner/pmbootstrap-work
-          client_version = 3.0.0
-          jobs = 4
-          channel = edge
-          device = xiaomi-whyred
-          vendor = xiaomi
-          ui = none
-          user = giebux
-          timezone = Asia/Jakarta
-          extra_packages = openssh,networkmanager,wpa_supplicant,iw,util-linux
-          mirrors_alpine = http://alpinelinux.org
-          aports = /home/runner/pmaports
-          EOF
-          
-          cp ~/.config/pmbootstrap.cfg ~/.config/pmbootstrap_v3.cfg
 
-      - name: Block Broken Remotes Non-Interactively
-        run: |
-          pmbootstrap config mirrors.pmaports none || true
-          pmbootstrap config mirrors.systemd none || true
+  # ============================================================
+  # 03. CLEAN RUNNER
+  # ============================================================
+  - name: Free Disk Space
+    run: |
+      sudo rm -rf /usr/share/dotnet
+      sudo rm -rf /opt/ghc
+      sudo rm -rf /usr/local/lib/android
+      sudo apt-get clean
 
-      - name: Inject Wi-Fi Configuration Into Target Rootfs
-        run: |
-          CHROOT_NM_DIR="/home/runner/pmbootstrap-work/chroot_rootfs_xiaomi-whyred/etc/NetworkManager/system-connections"
-          sudo mkdir -p "$CHROOT_NM_DIR"
-          
-          sudo tee "$CHROOT_NM_DIR/fh_25f618.nmconnection" > /dev/null << 'EOF'
-          [connection]
-          id=fh_25f618
-          uuid=a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d
-          type=wifi
-          interface-name=wlan0
+      df -h
 
-          [wifi]
-          mode=infrastructure
-          ssid=fh_25f618
 
-          [wifi-security]
-          auth-alg=open
-          key-mgmt=wpa-psk
-          psk=11223344
+  # ============================================================
+  # 04. HOST DEPENDENCIES
+  # ============================================================
+  - name: Install Build Dependencies
+    run: |
+      sudo apt-get update
 
-          [ipv4]
-          method=auto
+      sudo apt-get install -y \
+        git \
+        python3 \
+        openssl \
+        util-linux \
+        coreutils \
+        kpartx \
+        binfmt-support \
+        qemu-user-static \
+        openssh-client
 
-          [ipv6]
-          method=auto
-          EOF
+      echo "=== DEPENDENCIES ==="
+      git --version
+      python3 --version
+      losetup --version
+      kpartx --version
 
-          sudo chmod 600 "$CHROOT_NM_DIR/fh_25f618.nmconnection"
 
-      - name: Compile and Install Image Target
-        env:
-          PMBOOTSTRAP_OFFLINE: "1"
-          PMB_APK_FORCE_MISSING_REPOSITORIES: "1"
-        run: |
-          pmbootstrap --aports /home/runner/pmaports install --password=1234 --no-fstab
+  # ============================================================
+  # 05. PMBOOTSTRAP
+  # ============================================================
+  - name: Install Latest pmbootstrap
+    run: |
+      git clone --depth=1 \
+        https://gitlab.postmarketOS.org/postMarketOS/pmbootstrap.git \
+        "$HOME/pmbootstrap"
 
-      - name: Export Output Files
-        run: |
-          mkdir -p output
-          pmbootstrap --aports /home/runner/pmaports export /home/runner/work-export
-          cp -r /home/runner/work-export/* output/ || true
-          ls -la output/
+      mkdir -p "$HOME/.local/bin"
 
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-            name: pmos-whyred-headless-server
-            path: output/*
+      ln -sf \
+        "$HOME/pmbootstrap/pmbootstrap.py" \
+        "$HOME/.local/bin/pmbootstrap"
+
+      echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      pmbootstrap --version
+
+
+  # ============================================================
+  # 06. PMAPORTS
+  # ============================================================
+  - name: Clone Official pmaports
+    run: |
+      git clone --depth=1 \
+        https://gitlab.postmarketOS.org/postMarketOS/pmaports.git \
+        "$HOME/pmaports"
+
+      echo "=== PMAPORTS BRANCH ==="
+      git -C "$HOME/pmaports" branch --show-current
+
+      echo "=== WHYRED DEVICE CHECK ==="
+
+      if [ ! -d "$HOME/pmaports/device/testing/device-xiaomi-whyred" ]; then
+        echo "ERROR: device-xiaomi-whyred not found in current pmaports."
+        echo
+        find "$HOME/pmaports/device" \
+          -maxdepth 3 \
+          -type d \
+          -name '*whyred*' \
+          -print
+        exit 1
+      fi
+
+      echo "PASS: device-xiaomi-whyred exists."
+
+
+  # ============================================================
+  # 07. PMBOOTSTRAP CONFIGURATION
+  # ============================================================
+  - name: Configure pmbootstrap
+    run: |
+
+      pmbootstrap config aports "$HOME/pmaports"
+
+      pmbootstrap config device xiaomi-whyred
+
+      pmbootstrap config ui console
+
+      pmbootstrap config service_manager openrc
+
+      pmbootstrap config user giebux
+
+      pmbootstrap config hostname whyred-server
+
+      pmbootstrap config timezone Asia/Jakarta
+
+      pmbootstrap config jobs 4
+
+      pmbootstrap config extra_packages \
+        "openssh,networkmanager,wpa_supplicant,iw,util-linux,usbutils,curl"
+
+      pmbootstrap config ssh_keys False
+
+      pmbootstrap config nonfree_firmware True
+
+      echo
+      echo "=== PMBOOTSTRAP CONFIG ==="
+      pmbootstrap config
+
+
+  # ============================================================
+  # 08. BUILD ROOTFS WITHOUT IMAGE
+  # ============================================================
+  - name: Build Initial Rootfs
+    run: |
+      pmbootstrap install \
+        --no-image \
+        --password=1234
+
+
+  # ============================================================
+  # 09. INSTALL WIFI PROFILE
+  # ============================================================
+  - name: Configure Automatic Wi-Fi
+    run: |
+
+      ROOTFS="$HOME/.local/var/pmbootstrap/chroot_rootfs_xiaomi-whyred"
+
+      WIFI_DIR="$ROOTFS/etc/NetworkManager/system-connections"
+
+      sudo mkdir -p "$WIFI_DIR"
+
+      sudo tee "$WIFI_DIR/fh_25f618.nmconnection" > /dev/null <<'EOF'
+      [connection]
+      id=fh_25f618
+      type=wifi
+      autoconnect=true
+      autoconnect-priority=100
+
+      [wifi]
+      mode=infrastructure
+      ssid=fh_25f618
+
+      [wifi-security]
+      key-mgmt=wpa-psk
+      psk=11223344
+
+      [ipv4]
+      method=auto
+
+      [ipv6]
+      method=auto
+      EOF
+
+      sudo chmod 600 \
+        "$WIFI_DIR/fh_25f618.nmconnection"
+
+      echo "=== WIFI PROFILE ==="
+      sudo cat "$WIFI_DIR/fh_25f618.nmconnection"
+
+
+  # ============================================================
+  # 10. ENABLE NETWORKMANAGER
+  # ============================================================
+  - name: Enable NetworkManager
+    run: |
+
+      ROOTFS="$HOME/.local/var/pmbootstrap/chroot_rootfs_xiaomi-whyred"
+
+      sudo mkdir -p "$ROOTFS/etc/runlevels/default"
+
+      if [ -x "$ROOTFS/etc/init.d/NetworkManager" ]; then
+        sudo ln -sf \
+          /etc/init.d/NetworkManager \
+          "$ROOTFS/etc/runlevels/default/NetworkManager"
+      fi
+
+      echo "NetworkManager configuration prepared."
+
+
+  # ============================================================
+  # 11. BUILD FINAL IMAGE
+  # ============================================================
+  - name: Build Final Image
+    run: |
+
+      pmbootstrap install \
+        --password=1234
+
+
+  # ============================================================
+  # 12. VERIFY ROOTFS CONTENT
+  # ============================================================
+  - name: Verify Headless Configuration
+    run: |
+
+      ROOTFS="$HOME/.local/var/pmbootstrap/chroot_rootfs_xiaomi-whyred"
+
+      echo "=== VERIFY SSH ==="
+
+      if [ -x "$ROOTFS/usr/sbin/sshd" ] || \
+         [ -x "$ROOTFS/usr/sbin/sshd.pam" ]; then
+        echo "PASS: OpenSSH present."
+      else
+        echo "WARNING: sshd binary not found at expected path."
+      fi
+
+      echo
+      echo "=== VERIFY WIFI ==="
+
+      test -f \
+        "$ROOTFS/etc/NetworkManager/system-connections/fh_25f618.nmconnection"
+
+      echo "PASS: Wi-Fi profile present."
+
+      echo
+      echo "=== VERIFY NETWORKMANAGER ==="
+
+      if [ -e "$ROOTFS/etc/init.d/NetworkManager" ]; then
+        echo "PASS: NetworkManager init script present."
+      else
+        echo "WARNING: NetworkManager init script not found."
+      fi
+
+      echo
+      echo "=== VERIFY DEVICE ==="
+
+      test -d \
+        "$HOME/pmaports/device/testing/device-xiaomi-whyred"
+
+      echo "PASS: xiaomi-whyred device package."
+
+
+  # ============================================================
+  # 13. EXPORT
+  # ============================================================
+  - name: Export postmarketOS Images
+    run: |
+
+      mkdir -p output
+
+      pmbootstrap export \
+        "$HOME/work-export"
+
+      cp -a \
+        "$HOME/work-export/." \
+        output/
+
+      echo
+      echo "=== OUTPUT ==="
+      ls -lah output/
+
+
+  # ============================================================
+  # 14. UPLOAD ARTIFACT
+  # ============================================================
+  - name: Upload Build Artifacts
+    uses: actions/upload-artifact@v4
+    with:
+      name: pmos-whyred-headless-server
+      path: output/
+      if-no-files-found: error
